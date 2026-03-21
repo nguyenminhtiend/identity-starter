@@ -1,0 +1,35 @@
+{
+	"name": "@identity-starter/server",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"build": "tsc",
+		"dev": "tsx watch src/server.ts",
+		"start": "node dist/server.js",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@fastify/cors": "^10.0.2",
+		"@fastify/helmet": "^13.0.1",
+		"@identity-starter/core": "workspace:*",
+		"@identity-starter/db": "workspace:*",
+		"@identity-starter/redis": "workspace:*",
+		"@node-rs/argon2": "^2.0.2",
+		"@t3-oss/env-core": "^0.11.1",
+		"drizzle-orm": "^0.38.3",
+		"fastify": "^5.2.1",
+		"fastify-type-provider-zod": "^4.0.2",
+		"mitt": "^3.0.1",
+		"nanoid": "^5.0.9",
+		"pino": "^9.6.0",
+		"zod": "^3.24.1"
+	},
+	"devDependencies": {
+		"@types/node": "^25.5.0",
+		"pino-pretty": "^13.0.0",
+		"tsx": "^4.19.2",
+		"typescript": "^5.7.3",
+		"vitest": "^3.0.5"
+	}
+}
