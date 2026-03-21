@@ -1,0 +1,41 @@
+---
+description: Code style and formatting rules enforced by Biome. Apply when writing or editing any TypeScript/JavaScript code.
+globs: "**/*.{ts,tsx,js,jsx}"
+alwaysApply: true
+---
+
+# Code Style — Biome Enforced
+
+All code in this project is formatted and linted by Biome. Follow these conventions so output is clean on first pass.
+
+## Formatting
+
+- **Indent**: 2 spaces (no tabs)
+- **Quotes**: single quotes for JS/TS, double quotes for JSX attributes
+- **Semicolons**: always
+- **Trailing commas**: everywhere (function params, objects, arrays, etc.)
+- **Line width**: 100 characters max
+- **Line endings**: LF only
+- **Arrow functions**: always wrap params in parentheses — `(x) => x`, not `x => x`
+- **Object quote properties**: only when needed
+
+## Imports
+
+- Auto-sorted by Biome (organize imports enabled)
+- Use `import type { Foo }` when importing only types — never import a type as a value
+- Use `node:` protocol for Node.js built-ins — `import { readFile } from 'node:fs/promises'`, not `'fs/promises'`
+- Remove unused imports (error)
+
+## Linter Rules (errors that MUST be followed)
+
+- **No unused variables or imports** — remove them, don't leave dead code
+- **No `any`** — use `unknown`, generics, or proper types. Never `as any` or `: any`
+- **No `console.*`** — use the project logger (pino). Exception: test files
+- **Use block statements** — always use braces for `if`/`else`/`for`/`while`. No single-line bodies
+- **No non-null assertions** — avoid `foo!.bar`, prefer optional chaining or type narrowing (warn level)
+- **No accumulating spread** — don't use `{...acc, key: val}` inside `.reduce()`. Use a mutable object instead
+- **No `delete` operator** — prefer destructuring or `Map`/`Set`
+
+## When in Doubt
+
+Run `pnpm biome check .` to validate. Run `pnpm biome check --write .` to auto-fix.

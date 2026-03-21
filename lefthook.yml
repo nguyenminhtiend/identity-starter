@@ -1,5 +1,13 @@
 pre-commit:
   commands:
     lint:
-      glob: "*.{ts,tsx,js,jsx,json}"
-      run: pnpm biome check --staged --no-errors-on-unmatched
+      glob: '*.{ts,tsx,js,jsx,json}'
+      run: pnpm biome check --write --staged --no-errors-on-unmatched
+      stage_fixed: true
+
+pre-push:
+  commands:
+    lint:
+      run: pnpm biome check --no-errors-on-unmatched .
+    typecheck:
+      run: pnpm turbo build

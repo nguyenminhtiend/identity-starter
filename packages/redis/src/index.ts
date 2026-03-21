@@ -1,1 +1,1 @@
-export { createRedisClient, healthCheck, type RedisConfig } from './client.js'
+export { createRedisClient, healthCheck, type RedisConfig } from './client.js';

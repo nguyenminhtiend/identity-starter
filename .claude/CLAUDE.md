@@ -49,8 +49,13 @@ Routes (HTTP) → Service (Business Logic) → Repository (Data Access)
 - Type-safe via mitt
 
 ## Code Style
-- **Formatter**: Biome — tabs, single quotes, no semicolons, 100 char line width
-- **Imports**: Auto-sorted by Biome (organize imports enabled)
+- **Formatter**: Biome — 2-space indent, single quotes, always semicolons, trailing commas everywhere, LF line endings, 100 char line width
+- **Arrow functions**: always parenthesized — `(x) => x`
+- **Imports**: Auto-sorted by Biome; use `import type` for type-only imports; use `node:` protocol for Node.js built-ins
+- **No `any`**: use `unknown`, generics, or proper types (enforced as error)
+- **No `console.*`**: use pino logger (relaxed in test files)
+- **Block statements required**: always use braces for if/else/for/while
+- **No unused imports/variables**: enforced as error
 - **TypeScript**: Strict mode, ESNext module, Bundler resolution
 
 ## Testing

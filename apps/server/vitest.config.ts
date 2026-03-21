@@ -1,11 +1,11 @@
-import { defineConfig, mergeConfig } from 'vitest/config'
-import sharedConfig from '../../packages/config/vitest.shared.js'
+import { defineConfig, mergeConfig } from 'vitest/config';
+import sharedConfig from '../../packages/config/vitest.shared.js';
 
 export default mergeConfig(
-	sharedConfig,
-	defineConfig({
-		test: {
-			root: '.',
-		},
-	}),
-)
+  sharedConfig,
+  defineConfig({
+    test: {
+      root: '.',
+    },
+  }),
+);

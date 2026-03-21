@@ -1,15 +1,15 @@
 {
-	"extends": "./packages/config/tsconfig.base.json",
-	"compilerOptions": {
-		"composite": false,
-		"declaration": false,
-		"declarationMap": false,
-		"sourceMap": false
-	},
-	"references": [
-		{ "path": "packages/core" },
-		{ "path": "packages/db" },
-		{ "path": "packages/redis" },
-		{ "path": "apps/server" }
-	]
+  "extends": "./packages/config/tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "references": [
+    { "path": "packages/core" },
+    { "path": "packages/db" },
+    { "path": "packages/redis" },
+    { "path": "apps/server" }
+  ]
 }
