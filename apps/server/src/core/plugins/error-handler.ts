@@ -1,5 +1,6 @@
 import { DomainError, ValidationError } from '@identity-starter/core';
 import fp from 'fastify-plugin';
+import { hasZodFastifySchemaValidationErrors } from 'fastify-type-provider-zod';
 import { ZodError } from 'zod';
 
 const STATUS_MAP: Record<string, number> = {
@@ -12,6 +13,14 @@ const STATUS_MAP: Record<string, number> = {
 
 export const errorHandlerPlugin = fp(async (fastify) => {
   fastify.setErrorHandler((err, request, reply) => {
+    if (hasZodFastifySchemaValidationErrors(err)) {
+      return reply.code(400).send({
+        error: 'Validation Error',
+        code: 'VALIDATION_ERROR',
+        details: err.validation,
+      });
+    }
+
     if (err instanceof ZodError) {
       return reply.code(400).send({
         error: 'Validation Error',
@@ -33,11 +42,10 @@ export const errorHandlerPlugin = fp(async (fastify) => {
     return reply.code(500).send({ error: 'Internal Server Error' });
   });
 
-  fastify.setNotFoundHandler((request, reply) => {
+  fastify.setNotFoundHandler((_request, reply) => {
     reply.code(404).send({
       error: 'Not Found',
       code: 'ROUTE_NOT_FOUND',
-      message: `Route ${request.method} ${request.url} not found`,
     });
   });
 });

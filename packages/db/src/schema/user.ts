@@ -11,8 +11,11 @@ export const users = pgTable('users', {
     .notNull()
     .default('pending_verification'),
   metadata: jsonb('metadata').notNull().default({}),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
 });
 
 const { passwordHash: _, ...userColumns } = getTableColumns(users);

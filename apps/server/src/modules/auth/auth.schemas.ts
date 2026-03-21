@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const userStatusEnum = z.enum(['active', 'suspended', 'pending_verification']);
+
 export const registerSchema = z.object({
   email: z.email(),
   password: z.string().min(8),
@@ -22,12 +24,22 @@ export const changePasswordSchema = z.object({
 
 export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
+export const authResponseSchema = z.object({
+  token: z.string(),
+  user: z.object({
+    id: z.uuid(),
+    email: z.email(),
+    displayName: z.string(),
+    status: userStatusEnum,
+  }),
+});
+
 export interface AuthResponse {
   token: string;
   user: {
     id: string;
     email: string;
     displayName: string;
-    status: string;
+    status: 'active' | 'suspended' | 'pending_verification';
   };
 }

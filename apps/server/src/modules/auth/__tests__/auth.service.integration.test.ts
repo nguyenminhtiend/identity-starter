@@ -195,7 +195,8 @@ describe('changePassword', () => {
     const input = makeRegisterInput();
     const result = await register(testDb.db, eventBus, input);
 
-    await changePassword(testDb.db, eventBus, result.user.id, {
+    const session = await validateSession(testDb.db, result.token);
+    await changePassword(testDb.db, eventBus, result.user.id, session!.id, {
       currentPassword: input.password,
       newPassword: 'brand-new-pass-123',
     });
@@ -214,7 +215,8 @@ describe('changePassword', () => {
     const input = makeRegisterInput();
     const result = await register(testDb.db, eventBus, input);
 
-    await changePassword(testDb.db, eventBus, result.user.id, {
+    const session2 = await validateSession(testDb.db, result.token);
+    await changePassword(testDb.db, eventBus, result.user.id, session2!.id, {
       currentPassword: input.password,
       newPassword: 'brand-new-pass-456',
     });
@@ -234,7 +236,7 @@ describe('changePassword', () => {
     const result = await register(testDb.db, eventBus, input);
 
     await expect(
-      changePassword(testDb.db, eventBus, result.user.id, {
+      changePassword(testDb.db, eventBus, result.user.id, 'fake-session-id', {
         currentPassword: 'wrong-password',
         newPassword: 'new-password-123',
       }),
@@ -250,7 +252,8 @@ describe('changePassword', () => {
     const input = makeRegisterInput();
     const result = await register(testDb.db, eventBus, input);
 
-    await changePassword(testDb.db, eventBus, result.user.id, {
+    const session3 = await validateSession(testDb.db, result.token);
+    await changePassword(testDb.db, eventBus, result.user.id, session3!.id, {
       currentPassword: input.password,
       newPassword: 'another-new-pass',
     });

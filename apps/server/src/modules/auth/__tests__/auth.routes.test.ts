@@ -64,10 +64,10 @@ describe('auth routes', () => {
       const authResponse = {
         token: 'session-token',
         user: {
-          id: 'user-1',
+          id: '550e8400-e29b-41d4-a716-446655440000',
           email: 'new@example.com',
           displayName: 'New User',
-          status: 'pending_verification',
+          status: 'pending_verification' as const,
         },
       };
       vi.mocked(register).mockResolvedValue(authResponse);
@@ -140,7 +140,12 @@ describe('auth routes', () => {
     it('calls register with db, eventBus, and parsed input', async () => {
       const authResponse = {
         token: 'tok',
-        user: { id: '1', email: 'new@example.com', displayName: 'New User', status: 'active' },
+        user: {
+          id: '550e8400-e29b-41d4-a716-446655440000',
+          email: 'new@example.com',
+          displayName: 'New User',
+          status: 'active' as const,
+        },
       };
       vi.mocked(register).mockResolvedValue(authResponse);
 
@@ -171,7 +176,12 @@ describe('auth routes', () => {
     it('returns 200 with token and user on success', async () => {
       const authResponse = {
         token: 'login-token',
-        user: { id: 'user-1', email: 'user@example.com', displayName: 'User', status: 'active' },
+        user: {
+          id: '550e8400-e29b-41d4-a716-446655440000',
+          email: 'user@example.com',
+          displayName: 'User',
+          status: 'active' as const,
+        },
       };
       vi.mocked(login).mockResolvedValue(authResponse);
 
@@ -222,7 +232,12 @@ describe('auth routes', () => {
     it('calls login with db, eventBus, input, and meta', async () => {
       const authResponse = {
         token: 'tok',
-        user: { id: '1', email: 'user@example.com', displayName: 'User', status: 'active' },
+        user: {
+          id: '550e8400-e29b-41d4-a716-446655440000',
+          email: 'user@example.com',
+          displayName: 'User',
+          status: 'active' as const,
+        },
       };
       vi.mocked(login).mockResolvedValue(authResponse);
 
@@ -328,7 +343,7 @@ describe('auth routes', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('calls changePassword with db, eventBus, userId, and input', async () => {
+    it('calls changePassword with db, eventBus, userId, sessionId, and input', async () => {
       vi.mocked(changePassword).mockResolvedValue(undefined);
 
       await app.inject({
@@ -342,6 +357,7 @@ describe('auth routes', () => {
         expect.anything(),
         expect.anything(),
         mockSession.userId,
+        mockSession.id,
         expect.objectContaining({
           currentPassword: 'oldpassword1',
           newPassword: 'newpassword1',

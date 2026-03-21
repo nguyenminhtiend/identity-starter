@@ -5,7 +5,6 @@ export function makeCreateUserInput(overrides?: Partial<CreateUserInput>): Creat
   return {
     email: faker.internet.email(),
     displayName: faker.person.fullName(),
-    passwordHash: null,
     metadata: {},
     ...overrides,
   };

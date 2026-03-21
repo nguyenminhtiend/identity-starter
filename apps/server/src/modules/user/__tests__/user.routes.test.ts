@@ -1,11 +1,12 @@
 import { ConflictError, NotFoundError } from '@identity-starter/core';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Container } from '../../../core/container.js';
+import type { Container } from '../../../core/container-plugin.js';
 import { errorHandlerPlugin } from '../../../core/plugins/error-handler.js';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
+import { makeSession } from '../../session/__tests__/session.factory.js';
 import { makeUser } from './user.factory.js';
 
 vi.mock('../user.service.js', async (importOriginal) => {
@@ -22,6 +23,7 @@ import { createUser, findUserById } from '../user.service.js';
 
 describe('user routes', () => {
   let app: FastifyInstance;
+  const mockSession = makeSession();
 
   beforeAll(async () => {
     app = Fastify({ logger: false });
@@ -30,6 +32,13 @@ describe('user routes', () => {
 
     app.decorate('container', { db: {} as unknown as Container['db'] });
     app.decorate('eventBus', new InMemoryEventBus());
+
+    app.decorate('requireSession', async (request: FastifyRequest) => {
+      request.session = mockSession;
+      request.userId = mockSession.userId;
+    });
+    app.decorateRequest('session', null as unknown as typeof mockSession);
+    app.decorateRequest('userId', '');
 
     await app.register(errorHandlerPlugin);
     await app.register(userRoutes, { prefix: '/api/users' });
@@ -134,8 +143,8 @@ describe('user routes', () => {
       });
 
       expect(createUser).toHaveBeenCalledWith(
-        expect.anything(), // db
-        expect.anything(), // eventBus
+        expect.anything(),
+        expect.anything(),
         expect.objectContaining({
           email: 'test@example.com',
           displayName: 'Test User',
@@ -192,10 +201,7 @@ describe('user routes', () => {
         url: `/api/users/${validId}`,
       });
 
-      expect(findUserById).toHaveBeenCalledWith(
-        expect.anything(), // db
-        validId,
-      );
+      expect(findUserById).toHaveBeenCalledWith(expect.anything(), validId);
     });
   });
 });

@@ -22,7 +22,7 @@ code in a single pass.
 2. Read the module's existing files: schemas, service, routes, events, tests
 3. Read the `zod-v4` skill (`.cursor/skills/zod-v4/SKILL.md`) — Zod 4 syntax is required
 4. Read the module's `__tests__/<module>.factory.ts` for existing factory functions
-5. Read `apps/server/src/core/validate.ts` to understand the validation middleware
+5. Routes use **`fastify-type-provider-zod` v6** with the Fastify Zod type provider — validation and types come from `schema: { body, params, querystring, response }`, not a custom preHandler (**`validate.ts` is removed**)
 
 ## Formatting Rules (Biome)
 
@@ -37,7 +37,7 @@ code in a single pass.
 
 ## Step-by-Step Implementation
 
-### 1. Define the Schema (Zod 4)
+### 1. Define Request Schemas (Zod 4)
 
 Add validation schemas to `<module>.schemas.ts`. Use Zod 4 syntax exclusively.
 
@@ -53,6 +53,8 @@ export const createFooSchema = z.object({
 export type CreateFooInput = z.infer<typeof createFooSchema>;
 ```
 
+**User creation (`createUserSchema`)** does **not** include `passwordHash` or other credential material — public user creation is profile fields only; passwords are set via the **auth register** flow.
+
 **For URL parameters:**
 ```typescript
 export const fooIdParamSchema = z.object({
@@ -60,7 +62,7 @@ export const fooIdParamSchema = z.object({
 });
 ```
 
-**For query strings (list/search):**
+**For query strings (list/search)** — use the `querystring` key in the route `schema` object (Fastify convention). The handler receives coerced query values on `request.query` (typed by the provider):
 ```typescript
 export const listFoosQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
@@ -86,7 +88,37 @@ Zod 4 reminders:
 - `z.record(z.string(), z.unknown())` — always two arguments
 - Error customization: `{ error: '...' }` not `{ message: '...' }`
 
-### 2. Add Event (if the operation produces side effects)
+### 2. Define Response Schemas (Zod 4)
+
+Each module should expose Zod schemas for **every response shape** the routes return. This wires into `fastify-type-provider-zod` serialization and **reduces accidental data leaks** (e.g. `passwordHash`) because the HTTP contract is explicit.
+
+**Single resource:**
+```typescript
+export const fooResponseSchema = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  email: z.email(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+```
+
+**List payload (example):**
+```typescript
+export const listFoosResponseSchema = z.object({
+  items: z.array(fooResponseSchema),
+  total: z.number().int().nonnegative(),
+});
+```
+
+**Empty body (e.g. 204):** keep a tiny exported schema next to the others when you need a declared serializer shape:
+```typescript
+export const noContentSchema = z.undefined();
+```
+
+Reference these under `response` in each route (`200`, `201`, `204`, etc.).
+
+### 3. Add Event (if the operation produces side effects)
 
 Add to `<module>.events.ts`:
 ```typescript
@@ -97,9 +129,27 @@ export const FOO_EVENTS = {
 } as const;
 ```
 
-### 3. Implement the Service Function
+### 4. Implement the Service Function
 
-Add to `<module>.service.ts`. Service functions follow these conventions:
+Add to `<module>.service.ts`. Service functions follow these conventions.
+
+**Unique constraints (no SELECT-before-INSERT):** Run the `insert` and catch Postgres unique violations (`23505`), including when Drizzle wraps the driver error (`cause.code === '23505'`). Use:
+
+```typescript
+function isUniqueViolation(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const pgCode = (error as { code?: string }).code;
+  if (pgCode === '23505') {
+    return true;
+  }
+  const cause = (error as { cause?: { code?: string } }).cause;
+  return cause?.code === '23505';
+}
+```
+
+(Keep this helper private to the service file, or extract to a small shared DB utility if several modules need it.)
 
 **Create:**
 ```typescript
@@ -108,16 +158,15 @@ export async function createFoo(
   eventBus: EventBus,
   input: CreateFooInput,
 ): Promise<Foo> {
-  // Check for conflicts
-  const existing = await findByUniqueField(db, input.email);
-  if (existing) {
-    throw new ConflictError('Foo', 'email', input.email);
+  let row: SafeRowResult;
+  try {
+    [row] = await db.insert(foos).values({ ...input }).returning(fooColumns);
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ConflictError('Foo', 'email', input.email);
+    }
+    throw error;
   }
-
-  const [row] = await db
-    .insert(foos)
-    .values({ ...input })
-    .returning(fooColumns);
 
   const foo = mapToFoo(row);
   await eventBus.publish(createDomainEvent(FOO_EVENTS.CREATED, { foo }));
@@ -136,7 +185,8 @@ export async function findFooById(db: Database, id: string): Promise<Foo> {
 }
 ```
 
-**Update:**
+**Update:** If the table defines `updatedAt` with `.$onUpdate(() => new Date())` in Drizzle, you typically **do not** need to pass `updatedAt` in `.set()` unless you have a special case.
+
 ```typescript
 export async function updateFoo(
   db: Database,
@@ -146,7 +196,7 @@ export async function updateFoo(
 ): Promise<Foo> {
   const [row] = await db
     .update(foos)
-    .set({ ...input, updatedAt: new Date() })
+    .set({ ...input })
     .where(eq(foos.id, id))
     .returning(fooColumns);
 
@@ -196,75 +246,128 @@ export async function listFoos(
 }
 ```
 
-### 4. Add the Route
+### 5. Database schema (when adding or changing tables)
+
+Follow the `create-db-schema` skill. Timestamp columns use **timezone-aware** timestamps and `updatedAt` uses Drizzle's `.$onUpdate`:
+
+```typescript
+createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+updatedAt: timestamp('updated_at', { withTimezone: true })
+  .notNull()
+  .defaultNow()
+  .$onUpdate(() => new Date()),
+```
+
+### 6. Add the Route
 
 Add to `<module>.routes.ts`:
 
+- Use **`FastifyPluginAsyncZod`** from `fastify-type-provider-zod`, not `FastifyPluginAsync` from `fastify`
+- Pass Zod schemas in **`schema`** (`body`, `params`, `querystring`, **`response`**)
+- Do **not** import or use `validate` — it no longer exists
+- Do **not** cast `request.body` or `request.params` with `as SomeType` — the type provider infers types from the schema
+- Use `preHandler: fastify.requireSession` (or a module-level `addHook('onRequest', fastify.requireSession)`) **only** for session gating — separate from Zod validation
+
 ```typescript
-// POST — create resource
-fastify.post(
-  '/',
-  { preHandler: validate({ body: createFooSchema }) },
-  async (request, reply) => {
-    const foo = await createFoo(db, eventBus, request.body as CreateFooInput);
-    return reply.status(201).send(foo);
-  },
-);
+import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import {
+  createFooSchema,
+  fooIdParamSchema,
+  fooResponseSchema,
+  listFoosQuerySchema,
+  listFoosResponseSchema,
+  noContentSchema,
+  updateFooSchema,
+} from './foo.schemas.js';
+import { createFoo, deleteFoo, findFooById, listFoos, updateFoo } from './foo.service.js';
 
-// GET — read by ID
-fastify.get(
-  '/:id',
-  { preHandler: validate({ params: fooIdParamSchema }) },
-  async (request) => {
-    const { id } = request.params as { id: string };
-    return findFooById(db, id);
-  },
-);
+export const fooRoutes: FastifyPluginAsyncZod = async (fastify) => {
+  const { db } = fastify.container;
+  const { eventBus } = fastify;
 
-// PATCH — update
-fastify.patch(
-  '/:id',
-  { preHandler: validate({ params: fooIdParamSchema, body: updateFooSchema }) },
-  async (request) => {
-    const { id } = request.params as { id: string };
-    return updateFoo(db, eventBus, id, request.body as UpdateFooInput);
-  },
-);
+  fastify.post(
+    '/',
+    {
+      schema: {
+        body: createFooSchema,
+        response: { 201: fooResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const foo = await createFoo(db, eventBus, request.body);
+      return reply.status(201).send(foo);
+    },
+  );
 
-// DELETE — remove
-fastify.delete(
-  '/:id',
-  { preHandler: validate({ params: fooIdParamSchema }) },
-  async (request, reply) => {
-    const { id } = request.params as { id: string };
-    await deleteFoo(db, eventBus, id);
-    return reply.status(204).send();
-  },
-);
+  fastify.get(
+    '/:id',
+    {
+      schema: {
+        params: fooIdParamSchema,
+        response: { 200: fooResponseSchema },
+      },
+    },
+    async (request) => {
+      return findFooById(db, request.params.id);
+    },
+  );
 
-// GET — list with query params
-fastify.get(
-  '/',
-  { preHandler: validate({ querystring: listFoosQuerySchema }) },
-  async (request) => {
-    return listFoos(db, request.query as ListFoosQuery);
-  },
-);
+  fastify.patch(
+    '/:id',
+    {
+      schema: {
+        params: fooIdParamSchema,
+        body: updateFooSchema,
+        response: { 200: fooResponseSchema },
+      },
+    },
+    async (request) => {
+      return updateFoo(db, eventBus, request.params.id, request.body);
+    },
+  );
+
+  fastify.delete(
+    '/:id',
+    {
+      schema: {
+        params: fooIdParamSchema,
+        response: { 204: noContentSchema },
+      },
+    },
+    async (request, reply) => {
+      await deleteFoo(db, eventBus, request.params.id);
+      return reply.status(204).send();
+    },
+  );
+
+  fastify.get(
+    '/',
+    {
+      schema: {
+        querystring: listFoosQuerySchema,
+        response: { 200: listFoosResponseSchema },
+      },
+    },
+    async (request) => {
+      return listFoos(db, request.query);
+    },
+  );
+};
 ```
 
 HTTP status code conventions:
 - `201` — resource created (POST)
-- `200` — success (GET, PATCH, PUT) — Fastify default, no explicit `.status()` needed
-- `204` — no content (DELETE)
-- `400` — validation error (handled by `validate()` middleware and error handler)
+- `200` — success (GET, PATCH, PUT)
+- `204` — no content (DELETE and similar)
+- `400` — validation error (Zod + `fastify-type-provider-zod` + error handler)
 - `404` — not found (thrown as `NotFoundError`)
-- `409` — conflict (thrown as `ConflictError`)
+- `409` — conflict (thrown as `ConflictError`, including after unique violation on insert)
 
-### 5. Update Barrel Export
+### 7. Update Barrel Export
 
 Add new service functions to `index.ts`.
 
-### 6. Add Factory Functions
+### 8. Add Factory Functions
 
 Create or update `apps/server/src/modules/<module>/__tests__/<module>.factory.ts`.
 Each module owns its factories using `@faker-js/faker`:
@@ -293,13 +396,13 @@ export function makeFoo(overrides?: Partial<Foo>): Foo {
 }
 ```
 
-### 7. Write Unit Tests
+### 9. Write Unit Tests
 
 Create/update all three unit test files with 100% coverage:
 
 #### Schema Tests (`__tests__/<module>.schemas.test.ts`)
 
-For each new schema, test:
+For each new schema (request **and response**), test:
 - Valid input (required fields only)
 - Valid input (all fields)
 - Default values
@@ -307,7 +410,7 @@ For each new schema, test:
 - Each field with invalid type/format
 - Boundary values (min/max length)
 - Nullable fields accept `null`
-- Unknown fields stripped
+- Unknown fields stripped (request object schemas)
 - Param schemas: valid UUID, invalid UUID, missing, empty string
 
 #### Service Unit Tests (`__tests__/<module>.service.test.ts`)
@@ -333,6 +436,38 @@ vi.mock('../<module>.service.js', async (importOriginal) => {
   };
 });
 ```
+
+**Test app setup** (required for Zod routes):
+
+```typescript
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import Fastify from 'fastify';
+import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
+
+// ...
+
+app = Fastify({ logger: false });
+app.setValidatorCompiler(validatorCompiler);
+app.setSerializerCompiler(serializerCompiler);
+
+app.decorate('container', { db: {} as unknown as Container['db'] });
+app.decorate('eventBus', new InMemoryEventBus());
+```
+
+**Protected routes** (routes that use `fastify.requireSession` or an `onRequest` session hook): mock session **before** `app.ready()`:
+
+```typescript
+const mockSession = makeSession();
+
+app.decorate('requireSession', async (request: FastifyRequest) => {
+  request.session = mockSession;
+  request.userId = mockSession.userId;
+});
+app.decorateRequest('session', null as unknown as typeof mockSession);
+app.decorateRequest('userId', '');
+```
+
+Then register `errorHandlerPlugin` and the routes as usual.
 
 For each endpoint, test:
 
@@ -365,7 +500,7 @@ For each endpoint, test:
 - Default pagination values applied
 - Query parameter validation
 
-### 8. Write Integration Tests
+### 10. Write Integration Tests
 
 #### Service Integration Tests (`__tests__/<module>.service.integration.test.ts`)
 
@@ -381,7 +516,7 @@ beforeEach(() => { eventBus = new InMemoryEventBus(); });
 Test each service function against the real database:
 - CRUD operations work end-to-end
 - Default values set correctly
-- Unique constraints enforced
+- Unique constraints enforced via insert + `23505` → `ConflictError` (no duplicate rows)
 - Not found errors thrown
 - Events published with correct payload
 - Nullable fields round-trip correctly
@@ -405,10 +540,10 @@ afterAll(async () => {
 
 Test full HTTP lifecycle:
 - Create and retrieve consistency
-- Duplicate handling
+- Duplicate handling (unique constraint → 409)
 - Missing resources
-- Validation at HTTP boundary
-- Sensitive field exclusion
+- Validation at HTTP boundary (Zod + type provider)
+- Sensitive field exclusion (response schemas align with safe DTOs)
 - Pagination behavior (if applicable)
 
 ## Test Coverage Targets
@@ -420,7 +555,7 @@ Every code path should be tested. Specifically:
 | Schema valid input | schema test | — |
 | Schema invalid input | schema test | route integration |
 | Service success | — | service integration |
-| Service conflict | — | service integration |
+| Service conflict (unique violation) | — | service integration |
 | Service not found | — | service integration |
 | Service events | — | service integration |
 | Route success | route unit (mocked) | route integration |
@@ -439,16 +574,17 @@ pnpm turbo test           # All tests pass
 
 ## Checklist
 
-- [ ] Zod schemas added with Zod 4 syntax
-- [ ] Service function implemented
-- [ ] Event constant and payload type added (if applicable)
-- [ ] Route added with `validate()` preHandler
+- [ ] Zod **request** schemas added with Zod 4 syntax (no `passwordHash` on public user create — use auth register for passwords)
+- [ ] Zod **response** schemas added for each HTTP response shape (JSON and empty-body statuses)
+- [ ] Service function implemented; unique conflicts handled with **insert + `isUniqueViolation`** (not SELECT-then-insert)
+- [ ] Route plugin typed as `FastifyPluginAsyncZod` with `schema: { body?, params?, querystring?, response }` — **no** `validate()` preHandler, **no** `as` casts on `request.body` / `request.params`
+- [ ] DB columns use `timestamp(..., { withTimezone: true })` and `updatedAt` uses `.$onUpdate(() => new Date())` when defining new tables
 - [ ] Barrel export updated
 - [ ] Factory functions added/updated
-- [ ] Schema unit tests cover all validation paths
+- [ ] Schema unit tests cover all validation paths (request + response schemas)
 - [ ] Service unit tests cover events and domain logic
-- [ ] Route unit tests cover all status codes with mocked service
-- [ ] Service integration tests verify real DB behavior
+- [ ] Route unit tests cover all status codes with mocked service; **protected** routes mock `requireSession` and decorate `session` / `userId`
+- [ ] Service integration tests verify real DB behavior (including unique violations)
 - [ ] Route integration tests verify full HTTP lifecycle
 - [ ] `pnpm biome check .` passes
 - [ ] `pnpm turbo test` passes

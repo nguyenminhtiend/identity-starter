@@ -20,21 +20,11 @@ describe('createUserSchema', () => {
   it('accepts valid input with all fields', () => {
     const result = createUserSchema.safeParse({
       ...validInput,
-      passwordHash: 'hashed',
       metadata: { role: 'admin' },
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.passwordHash).toBe('hashed');
       expect(result.data.metadata).toEqual({ role: 'admin' });
-    }
-  });
-
-  it('accepts null passwordHash', () => {
-    const result = createUserSchema.safeParse({ ...validInput, passwordHash: null });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.passwordHash).toBeNull();
     }
   });
 

@@ -24,7 +24,12 @@ export class InMemoryEventBus implements EventBus {
   private emitter = mitt<Record<string, DomainEvent>>();
 
   async publish(event: DomainEvent): Promise<void> {
-    this.emitter.emit(event.eventName, event);
+    try {
+      this.emitter.emit(event.eventName, event);
+    } catch (_err) {
+      // Prevent subscriber errors from crashing the publisher.
+      // In production, replace with structured logging.
+    }
   }
 
   subscribe(eventName: string, handler: EventHandler): void {

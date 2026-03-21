@@ -27,8 +27,8 @@ export const authPlugin = fp(async (fastify) => {
       throw new UnauthorizedError('Missing or invalid Authorization header');
     }
 
-    const token = authHeader.slice(7);
-    const session = await validateSession(db, token);
+    const rawToken = authHeader.slice(7);
+    const session = await validateSession(db, rawToken);
     if (!session) {
       throw new UnauthorizedError('Invalid or expired session');
     }

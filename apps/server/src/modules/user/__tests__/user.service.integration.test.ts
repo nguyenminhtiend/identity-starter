@@ -68,8 +68,8 @@ describe('createUser', () => {
     await expect(createUser(testDb.db, eventBus, input)).rejects.toThrow(ConflictError);
   });
 
-  it('stores nullable passwordHash', async () => {
-    const input = makeCreateUserInput({ passwordHash: null });
+  it('stores null passwordHash by default', async () => {
+    const input = makeCreateUserInput();
     await createUser(testDb.db, eventBus, input);
 
     const user = await findUserByEmailWithPassword(testDb.db, input.email);

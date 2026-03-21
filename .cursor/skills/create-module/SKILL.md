@@ -26,9 +26,9 @@ plugin with strict boundaries.
 
 ```
 apps/server/src/modules/<name>/
-  <name>.schemas.ts     — Zod validation schemas + TypeScript interfaces
+  <name>.schemas.ts     — Zod validation + response schemas + TypeScript interfaces
   <name>.service.ts     — Business logic, throws domain errors, emits events
-  <name>.routes.ts      — Fastify routes (HTTP layer)
+  <name>.routes.ts      — Fastify routes (HTTP layer, fastify-type-provider-zod)
   <name>.events.ts      — Event constants and payload types
   index.ts              — Public API barrel export
   __tests__/
@@ -62,8 +62,11 @@ import { boolean, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-c
 export const sessions = pgTable('sessions', {
   id: uuid('id').primaryKey().default(sql`uuidv7()`),
   // ... domain-specific columns
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
 });
 
 // Exclude sensitive columns from default queries
@@ -73,13 +76,16 @@ export { sessionColumns };
 ```
 
 Key patterns:
+
 - UUIDs use `uuidv7()` via SQL default
-- Timestamps: `created_at` and `updated_at` with `defaultNow()`
+- Timestamps: use `timestamp('column_name', { withTimezone: true })`, not plain `timestamp('column_name')`
+- `created_at` / `updated_at`: `defaultNow()` on both; add `.$onUpdate(() => new Date())` on `updatedAt` so ORM updates bump the row on change
 - Column names use snake_case in the database
 - Use `getTableColumns()` to create a safe subset excluding sensitive fields
 - Export both the full table (for internal service use) and safe columns (for public queries)
 
 Then export from `packages/db/src/schema/index.ts`:
+
 ```typescript
 export { sessionColumns, sessions } from './session.js';
 ```
@@ -87,13 +93,14 @@ export { sessionColumns, sessions } from './session.js';
 Also export from `packages/db/src/index.ts` if there's a top-level barrel.
 
 After creating the schema, generate a migration:
+
 ```bash
 pnpm db:generate
 ```
 
-## Step 2: Schemas (Zod Validation)
+## Step 2: Schemas (Zod — request, params, and response)
 
-Create `<name>.schemas.ts` — this file contains both Zod schemas and TypeScript interfaces.
+Create `<name>.schemas.ts` — Zod schemas for inputs **and** HTTP responses, plus TypeScript interfaces for the domain.
 
 ```typescript
 import { z } from 'zod';
@@ -108,7 +115,7 @@ export interface Session {
   updatedAt: Date;
 }
 
-// Zod schemas validate input — use Zod 4 syntax
+// Request body
 export const createSessionSchema = z.object({
   userId: z.uuid(),
   expiresAt: z.iso.datetime(),
@@ -116,16 +123,29 @@ export const createSessionSchema = z.object({
 
 export type CreateSessionInput = z.infer<typeof createSessionSchema>;
 
+// Route params
 export const sessionIdParamSchema = z.object({
   id: z.uuid(),
+});
+
+// Serialized API responses — use in route `schema.response`; shape must match what handlers send
+export const sessionResponseSchema = z.object({
+  id: z.uuid(),
+  userId: z.uuid(),
+  token: z.string(),
+  expiresAt: z.date(),
+  createdAt: z.date(),
+  updatedAt: z.date(),
 });
 ```
 
 Important:
+
 - Use Zod 4 top-level validators: `z.email()`, `z.uuid()`, `z.url()` — NOT `z.string().email()`
 - Records always need two args: `z.record(z.string(), z.unknown())`
 - Error customization uses `{ error: '...' }` not `{ message: '...' }`
-- Export both the interface AND the Zod schema + inferred type
+- Export interfaces, input/param schemas, inferred input types, **and** one response schema per resource shape routes return
+- Define a `*ResponseSchema` for each distinct JSON body you return (200, 201, etc.) and reference it in the route `schema.response` map
 
 ## Step 3: Events
 
@@ -176,17 +196,37 @@ function mapToSession(row: SafeRowResult): Session {
   };
 }
 
+function isUniqueViolation(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const pgCode = (error as { code?: string }).code;
+  if (pgCode === '23505') {
+    return true;
+  }
+  const cause = (error as { cause?: { code?: string } }).cause;
+  return cause?.code === '23505';
+}
+
 export async function createSession(
   db: Database,
   eventBus: EventBus,
   input: CreateSessionInput,
 ): Promise<Session> {
-  const [row] = await db
-    .insert(sessions)
-    .values({
-      // ... map input to DB values
-    })
-    .returning(sessionColumns);
+  let row: SafeRowResult;
+  try {
+    [row] = await db
+      .insert(sessions)
+      .values({
+        // ... map input to DB values
+      })
+      .returning(sessionColumns);
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ConflictError('Session', 'userId', input.userId);
+    }
+    throw error;
+  }
 
   const session = mapToSession(row);
   await eventBus.publish(createDomainEvent(SESSION_EVENTS.CREATED, { session }));
@@ -203,54 +243,68 @@ export async function findSessionById(db: Database, id: string): Promise<Session
 ```
 
 Key patterns:
+
 - Functions take `db: Database` and `eventBus: EventBus` as first arguments (dependency injection, not class-based)
 - Throw `NotFoundError`, `ConflictError`, `ValidationError` from `@identity-starter/core` — never throw generic errors for business logic
 - Use `returning(safeColumns)` to exclude sensitive fields from results
 - Emit domain events after successful operations
 - Map DB rows to domain types via explicit mapping functions
 
+**Unique constraints (avoid SELECT-then-INSERT):** For “exists?” checks backed by a unique index, **insert first** and handle PostgreSQL unique violations (`23505`) with `isUniqueViolation` → `ConflictError`. Do not pre-select to decide whether to insert; that races under concurrency. Adjust `ConflictError` arguments to match the entity and conflicting field(s) (`new ConflictError('User', 'email', input.email)`).
+
 ## Step 5: Routes
+
+Use **`fastify-type-provider-zod`**: `FastifyPluginAsyncZod` and a `schema` object on each route (`body`, `params`, `response`). Do **not** use a shared `validate` pre-handler — that pattern was removed from the project.
 
 Create `<name>.routes.ts`:
 
 ```typescript
-import type { FastifyPluginAsync } from 'fastify';
-import { validate } from '../../core/validate.js';
-import type { CreateSessionInput } from './<name>.schemas.js';
-import { createSessionSchema, sessionIdParamSchema } from './<name>.schemas.js';
+import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import { createSessionSchema, sessionIdParamSchema, sessionResponseSchema } from './<name>.schemas.js';
 import { createSession, findSessionById } from './<name>.service.js';
 
-export const sessionRoutes: FastifyPluginAsync = async (fastify) => {
+export const sessionRoutes: FastifyPluginAsyncZod = async (fastify) => {
   const { db } = fastify.container;
   const { eventBus } = fastify;
 
   fastify.post(
     '/',
-    { preHandler: validate({ body: createSessionSchema }) },
+    {
+      schema: {
+        body: createSessionSchema,
+        response: { 201: sessionResponseSchema },
+      },
+    },
     async (request, reply) => {
-      const session = await createSession(db, eventBus, request.body as CreateSessionInput);
+      const session = await createSession(db, eventBus, request.body);
       return reply.status(201).send(session);
     },
   );
 
   fastify.get(
     '/:id',
-    { preHandler: validate({ params: sessionIdParamSchema }) },
+    {
+      schema: {
+        params: sessionIdParamSchema,
+        response: { 200: sessionResponseSchema },
+      },
+    },
     async (request) => {
-      const { id } = request.params as { id: string };
-      return findSessionById(db, id);
+      return findSessionById(db, request.params.id);
     },
   );
 };
 ```
 
 Key patterns:
-- Export as `const <name>Routes: FastifyPluginAsync`
+
+- Export as `const <name>Routes: FastifyPluginAsyncZod` (not `FastifyPluginAsync` from `fastify`)
 - Destructure `db` from `fastify.container` and `eventBus` from `fastify`
-- Use `validate()` preHandler for all input validation
-- Cast `request.body` and `request.params` to the appropriate types
+- Validate with `schema: { body / params / querystring / response }` — **not** `preHandler: validate({})`
+- The type provider infers `request.body` and `request.params`; **do not** cast with `as CreateSessionInput` or `as { id: string }`
+- Declare every status code you send under `response` (e.g. `{ 200: fooResponseSchema }`, `{ 201: fooResponseSchema }`)
 - POST returns 201 via `reply.status(201).send()`
-- GET returns the result directly (Fastify sends 200 by default)
+- GET returns the result directly (Fastify sends 200 by default) when the handler returns a value
 
 ## Step 6: Barrel Export
 
@@ -266,6 +320,7 @@ export {
 ```
 
 Only export what other modules might need:
+
 - The routes plugin (for module-loader registration)
 - All schemas and types (other modules may need to reference them)
 - Service functions that represent the public API
@@ -340,12 +395,13 @@ pnpm turbo test           # Run all tests
 ## Checklist
 
 Before considering the module complete:
-- [ ] DB schema created in `packages/db/src/schema/` and exported
+
+- [ ] DB schema created in `packages/db/src/schema/` with `timestamp(..., { withTimezone: true })` and `updatedAt` using `.$onUpdate(() => new Date())`
 - [ ] Migration generated with `pnpm db:generate`
-- [ ] Schemas file with Zod 4 syntax
+- [ ] Schemas file with Zod 4 syntax, including **response** schemas used in routes
 - [ ] Events file with constants and payload types
-- [ ] Service file with all operations
-- [ ] Routes file as Fastify plugin
+- [ ] Service file with all operations; unique constraints enforced via insert + `23505` handling, not SELECT-then-INSERT
+- [ ] Routes file as `FastifyPluginAsyncZod` with `schema: { body, params, response }` (no `validate` pre-handler, no request body/param casts)
 - [ ] Barrel export in `index.ts`
 - [ ] Module registered in `core/module-loader.ts`
 - [ ] Factory file created at `__tests__/<name>.factory.ts` using `@faker-js/faker`

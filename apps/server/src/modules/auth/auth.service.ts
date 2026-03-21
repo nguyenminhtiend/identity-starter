@@ -4,7 +4,7 @@ import { userColumns, users } from '@identity-starter/db';
 import { eq } from 'drizzle-orm';
 import { hashPassword, verifyPassword } from '../../core/password.js';
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
-import { createSession, revokeSession } from '../session/session.service.js';
+import { createSession, revokeAllUserSessions, revokeSession } from '../session/session.service.js';
 import { AUTH_EVENTS } from './auth.events.js';
 import type {
   AuthResponse,
@@ -23,9 +23,21 @@ function toAuthResponse(row: SafeRowResult, token: string): AuthResponse {
       id: row.id,
       email: row.email,
       displayName: row.displayName,
-      status: row.status as string,
+      status: row.status as AuthResponse['user']['status'],
     },
   };
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  const pgCode = (error as { code?: string }).code;
+  if (pgCode === '23505') {
+    return true;
+  }
+  const cause = (error as { cause?: { code?: string } }).cause;
+  return cause?.code === '23505';
 }
 
 export async function register(
@@ -33,26 +45,24 @@ export async function register(
   eventBus: EventBus,
   input: RegisterInput,
 ): Promise<AuthResponse> {
-  const [existing] = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(eq(users.email, input.email))
-    .limit(1);
-
-  if (existing) {
-    throw new ConflictError('User', 'email', input.email);
-  }
-
   const passwordHash = await hashPassword(input.password);
 
-  const [userRow] = await db
-    .insert(users)
-    .values({
-      email: input.email,
-      displayName: input.displayName,
-      passwordHash,
-    })
-    .returning(userColumns);
+  let userRow: SafeRowResult;
+  try {
+    [userRow] = await db
+      .insert(users)
+      .values({
+        email: input.email,
+        displayName: input.displayName,
+        passwordHash,
+      })
+      .returning(userColumns);
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new ConflictError('User', 'email', input.email);
+    }
+    throw error;
+  }
 
   const session = await createSession(db, eventBus, { userId: userRow.id });
 
@@ -106,7 +116,7 @@ export async function login(
     userAgent: meta.userAgent,
   });
 
-  const [safeRow] = await db.select(userColumns).from(users).where(eq(users.id, row.id)).limit(1);
+  const { passwordHash: _, ...safeRow } = row;
 
   await eventBus.publish(createDomainEvent(AUTH_EVENTS.LOGIN, { userId: row.id }));
 
@@ -127,6 +137,7 @@ export async function changePassword(
   db: Database,
   eventBus: EventBus,
   userId: string,
+  currentSessionId: string,
   input: ChangePasswordInput,
 ): Promise<void> {
   const [row] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -145,6 +156,8 @@ export async function changePassword(
     .update(users)
     .set({ passwordHash: newHash, updatedAt: new Date() })
     .where(eq(users.id, userId));
+
+  await revokeAllUserSessions(db, eventBus, userId, currentSessionId);
 
   await eventBus.publish(createDomainEvent(AUTH_EVENTS.PASSWORD_CHANGED, { userId }));
 }

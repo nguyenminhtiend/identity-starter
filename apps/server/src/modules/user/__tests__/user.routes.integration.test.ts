@@ -2,14 +2,24 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildTestApp } from '../../../test/app-builder.js';
 import { createTestDb, type TestDb } from '../../../test/db-helper.js';
+import { makeRegisterInput } from '../../auth/__tests__/auth.factory.js';
 import { makeCreateUserInput } from './user.factory.js';
 
 let testDb: TestDb;
 let app: FastifyInstance;
+let authToken: string;
 
 beforeAll(async () => {
   testDb = await createTestDb();
   app = await buildTestApp({ db: testDb.db });
+
+  const regInput = makeRegisterInput();
+  const regResponse = await app.inject({
+    method: 'POST',
+    url: '/api/auth/register',
+    payload: regInput,
+  });
+  authToken = regResponse.json().token;
 });
 
 afterAll(async () => {
@@ -18,11 +28,21 @@ afterAll(async () => {
 });
 
 describe('POST /api/users', () => {
+  it('returns 401 without auth header', async () => {
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/users',
+      payload: makeCreateUserInput(),
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
   it('returns 201 with created user', async () => {
     const input = makeCreateUserInput();
     const response = await app.inject({
       method: 'POST',
       url: '/api/users',
+      headers: { authorization: `Bearer ${authToken}` },
       payload: input,
     });
 
@@ -39,12 +59,14 @@ describe('POST /api/users', () => {
     await app.inject({
       method: 'POST',
       url: '/api/users',
+      headers: { authorization: `Bearer ${authToken}` },
       payload: input,
     });
 
     const response = await app.inject({
       method: 'POST',
       url: '/api/users',
+      headers: { authorization: `Bearer ${authToken}` },
       payload: input,
     });
 
@@ -56,6 +78,7 @@ describe('POST /api/users', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/users',
+      headers: { authorization: `Bearer ${authToken}` },
       payload: {},
     });
 
@@ -66,6 +89,7 @@ describe('POST /api/users', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/users',
+      headers: { authorization: `Bearer ${authToken}` },
       payload: { email: 'not-an-email', displayName: 'Test' },
     });
 
@@ -76,6 +100,7 @@ describe('POST /api/users', () => {
     const response = await app.inject({
       method: 'POST',
       url: '/api/users',
+      headers: { authorization: `Bearer ${authToken}` },
       payload: { email: 'valid@example.com', displayName: '' },
     });
 
@@ -84,11 +109,20 @@ describe('POST /api/users', () => {
 });
 
 describe('GET /api/users/:id', () => {
+  it('returns 401 without auth header', async () => {
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/users/550e8400-e29b-41d4-a716-446655440000',
+    });
+    expect(response.statusCode).toBe(401);
+  });
+
   it('returns 200 with user data after creation', async () => {
     const input = makeCreateUserInput();
     const createResponse = await app.inject({
       method: 'POST',
       url: '/api/users',
+      headers: { authorization: `Bearer ${authToken}` },
       payload: input,
     });
     const createdUser = createResponse.json();
@@ -96,6 +130,7 @@ describe('GET /api/users/:id', () => {
     const response = await app.inject({
       method: 'GET',
       url: `/api/users/${createdUser.id}`,
+      headers: { authorization: `Bearer ${authToken}` },
     });
 
     expect(response.statusCode).toBe(200);
@@ -109,6 +144,7 @@ describe('GET /api/users/:id', () => {
     const response = await app.inject({
       method: 'GET',
       url: '/api/users/00000000-0000-0000-0000-000000000000',
+      headers: { authorization: `Bearer ${authToken}` },
     });
 
     expect(response.statusCode).toBe(404);
@@ -119,6 +155,7 @@ describe('GET /api/users/:id', () => {
     const response = await app.inject({
       method: 'GET',
       url: '/api/users/not-a-uuid',
+      headers: { authorization: `Bearer ${authToken}` },
     });
 
     expect(response.statusCode).toBe(400);
@@ -131,6 +168,7 @@ describe('full lifecycle', () => {
     const createResponse = await app.inject({
       method: 'POST',
       url: '/api/users',
+      headers: { authorization: `Bearer ${authToken}` },
       payload: input,
     });
 
@@ -140,6 +178,7 @@ describe('full lifecycle', () => {
     const getResponse = await app.inject({
       method: 'GET',
       url: `/api/users/${created.id}`,
+      headers: { authorization: `Bearer ${authToken}` },
     });
 
     expect(getResponse.statusCode).toBe(200);

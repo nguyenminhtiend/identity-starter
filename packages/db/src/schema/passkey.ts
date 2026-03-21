@@ -26,7 +26,7 @@ export const passkeys = pgTable('passkeys', {
   backedUp: boolean('backed_up').notNull().default(false),
   transports: text('transports').array(),
   name: text('name'),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
 const { publicKey: _, ...passkeyColumns } = getTableColumns(passkeys);

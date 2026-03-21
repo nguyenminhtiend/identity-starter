@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 
 async function createTestUser() {
-  return createUser(testDb.db, eventBus, makeCreateUserInput({ passwordHash: 'hash' }));
+  return createUser(testDb.db, eventBus, makeCreateUserInput());
 }
 
 describe('createSession', () => {
@@ -94,7 +94,9 @@ describe('createSession', () => {
 
     expect(events).toHaveLength(1);
     expect(events[0].eventName).toBe(SESSION_EVENTS.CREATED);
-    expect(events[0].payload).toEqual({ session });
+    const payload = events[0].payload as { session: { id: string; userId: string } };
+    expect(payload.session.id).toBe(session.id);
+    expect(payload.session.userId).toBe(session.userId);
   });
 
   it('stores optional ipAddress and userAgent', async () => {

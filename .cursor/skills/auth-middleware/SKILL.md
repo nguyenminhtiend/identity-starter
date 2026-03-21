@@ -12,29 +12,34 @@ description: >-
 
 # Auth Middleware Skill
 
-Implement session-based authentication middleware for Fastify routes. This
-project uses opaque Bearer tokens (not JWT) validated against Redis cache with
-DB fallback.
+Implement session-based authentication middleware for Fastify routes. This project
+uses opaque Bearer tokens (not JWT). Tokens are sent raw by the client; the server
+stores only a **SHA-256 hash** (base64url) in the database. `validateSession`
+receives the raw token, hashes it, and looks up the session by hash.
 
 ## Before Writing
 
 1. Read `apps/server/src/core/plugins/error-handler.ts` to understand how errors map to HTTP status codes
-2. Read `apps/server/src/core/validate.ts` to understand the existing `preHandler` pattern
-3. Read the session module's service file (for `validateSession` function signature)
-4. Read the `redis-integration` skill if you need to understand Redis cache patterns
+2. Read an existing routes file such as `apps/server/src/modules/auth/auth.routes.ts` for the `schema: { body, response }` pattern with `fastify-type-provider-zod`
+3. Read the session module's service file (for `validateSession` function signature and hashing behavior)
+4. Use the `zod-v4` skill when defining or editing Zod schemas used in route `schema` options
 
 ## Architecture
 
 ```
-Client → Authorization: Bearer <token>
-  → Middleware extracts token
-  → validateSession(db, redis, token)
-    → Check Redis cache (key: session:{token})
-    → Cache miss? Check DB, re-cache on hit
+Client → Authorization: Bearer <raw-token>
+  → Middleware extracts raw token
+  → validateSession(db, rawToken)
+    → Hash token (SHA-256 → base64url)
+    → Query DB by hash
     → Expired? Return null
+    → Debounce lastActiveAt update (5min threshold)
   → Decorate request with session + userId
   → Route handler has access to request.session and request.userId
 ```
+
+Session validation is database-backed only in the current implementation (no Redis
+layer for session lookup yet).
 
 The middleware is a Fastify plugin that can be applied at route-level (`preHandler`)
 or plugin-level (all routes in a plugin scope).
@@ -64,13 +69,15 @@ Create as a Fastify plugin using `fastify-plugin` (so it propagates to parent sc
 
 ```typescript
 import { UnauthorizedError } from '@identity-starter/core';
+import type { FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
-import { validateSession } from '../modules/session/session.service.js';
+import type { Session } from '../../modules/session/session.schemas.js';
+import { validateSession } from '../../modules/session/session.service.js';
 
 export const authPlugin = fp(async (fastify) => {
-  const { db, redis } = fastify.container;
+  const { db } = fastify.container;
 
-  fastify.decorateRequest('session', null);
+  fastify.decorateRequest('session', null as unknown as Session);
   fastify.decorateRequest('userId', '');
 
   fastify.decorate('requireSession', async (request: FastifyRequest) => {
@@ -79,8 +86,8 @@ export const authPlugin = fp(async (fastify) => {
       throw new UnauthorizedError('Missing or invalid Authorization header');
     }
 
-    const token = authHeader.slice(7);
-    const session = await validateSession(db, redis, token);
+    const rawToken = authHeader.slice(7);
+    const session = await validateSession(db, rawToken);
     if (!session) {
       throw new UnauthorizedError('Invalid or expired session');
     }
@@ -92,12 +99,12 @@ export const authPlugin = fp(async (fastify) => {
 ```
 
 Important patterns:
+
 - Use `fp()` wrapper so decorations propagate across plugin scopes
-- `decorateRequest` with null/empty defaults (Fastify requires this for JIT optimization)
-- Extract token by slicing after `"Bearer "` (7 characters)
+- `decorateRequest` with typed null default (`null as unknown as Session`) and empty `userId` string (Fastify expects defaults for request decorations)
+- Extract token by slicing after `"Bearer "` (7 characters); pass the **raw** string to `validateSession` — hashing happens inside the service
 - Throw `UnauthorizedError` which the error handler maps to 401
-- The `requireSession` function is a preHandler, not an onRequest hook — this allows
-  selective application per route
+- The `requireSession` function is a preHandler, not an onRequest hook — this allows selective application per route
 
 ## UnauthorizedError
 
@@ -124,6 +131,12 @@ const STATUS_MAP: Record<string, number> = {
 };
 ```
 
+## Route plugin type and validation
+
+Use `FastifyPluginAsyncZod` from `fastify-type-provider-zod` (not `FastifyPluginAsync` from `fastify`). Register `validatorCompiler` and `serializerCompiler` from the same package on the Fastify instance where Zod routes run.
+
+Validate request bodies and declare responses with the route `schema` option; do not use a removed `validate()` helper from core.
+
 ## Applying Middleware to Routes
 
 ### Route-level (selective — preferred)
@@ -131,7 +144,9 @@ const STATUS_MAP: Record<string, number> = {
 Use `preHandler` to protect individual routes:
 
 ```typescript
-export const accountRoutes: FastifyPluginAsync = async (fastify) => {
+import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+
+export const accountRoutes: FastifyPluginAsyncZod = async (fastify) => {
   const { db } = fastify.container;
 
   fastify.get(
@@ -149,7 +164,11 @@ export const accountRoutes: FastifyPluginAsync = async (fastify) => {
 Use `addHook` to protect every route registered within a plugin:
 
 ```typescript
-export const accountRoutes: FastifyPluginAsync = async (fastify) => {
+import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+
+export const accountRoutes: FastifyPluginAsyncZod = async (fastify) => {
+  const { db } = fastify.container;
+
   fastify.addHook('onRequest', fastify.requireSession);
 
   fastify.get('/profile', async (request) => {
@@ -160,45 +179,54 @@ export const accountRoutes: FastifyPluginAsync = async (fastify) => {
 
 ### Mixing public and protected routes
 
-Register public routes in a separate plugin scope, or use route-level preHandler:
+Public routes omit `preHandler` and use `schema` for validation. Protected routes use `preHandler: fastify.requireSession`. You can combine both on one route:
 
 ```typescript
-export const authRoutes: FastifyPluginAsync = async (fastify) => {
-  const { db, redis } = fastify.container;
+import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+
+export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
+  const { db } = fastify.container;
   const { eventBus } = fastify;
 
-  // Public routes — no preHandler
-  fastify.post('/login', { preHandler: validate({ body: loginSchema }) }, async (request, reply) => {
-    const result = await login(db, redis, eventBus, request.body as LoginInput, {
-      ipAddress: request.ip,
-      userAgent: request.headers['user-agent'] ?? null,
-    });
-    return reply.status(200).send(result);
-  });
+  // Public routes — no preHandler, use schema for validation
+  fastify.post(
+    '/login',
+    {
+      schema: { body: loginSchema, response: { 200: authResponseSchema } },
+    },
+    async (request, reply) => {
+      const result = await login(db, eventBus, request.body, {
+        ipAddress: request.ip,
+        userAgent: request.headers['user-agent'],
+      });
+      return reply.status(200).send(result);
+    },
+  );
 
-  // Protected routes — add requireSession to preHandler array
+  // Protected routes
   fastify.post(
     '/logout',
     { preHandler: fastify.requireSession },
     async (request, reply) => {
-      await logout(db, redis, eventBus, request.session.id);
+      await logout(db, eventBus, request.session.id, request.userId);
       return reply.status(204).send();
     },
   );
 
-  // Multiple preHandlers — validate + auth
+  // Protected + validated
   fastify.post(
     '/change-password',
-    { preHandler: [fastify.requireSession, validate({ body: changePasswordSchema })] },
-    async (request) => {
-      return changePassword(db, eventBus, request.userId, request.body as ChangePasswordInput);
+    {
+      preHandler: fastify.requireSession,
+      schema: { body: changePasswordSchema },
+    },
+    async (request, reply) => {
+      await changePassword(db, eventBus, request.userId, request.session.id, request.body);
+      return reply.status(204).send();
     },
   );
 };
 ```
-
-When combining `requireSession` with `validate()`, pass them as an array.
-Order matters: auth first, then validation (so validation errors don't leak to unauthenticated users).
 
 ## Registering the Auth Plugin
 
@@ -230,6 +258,10 @@ declare module 'fastify' {
 In route unit tests, mock the session middleware by decorating the test app:
 
 ```typescript
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import Fastify from 'fastify';
+import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
+import type { Container } from '../../../core/container-plugin.js';
 import type { Session } from '../../session/session.schemas.js';
 import { makeSession } from '../../session/__tests__/session.factory.js';
 
@@ -242,15 +274,14 @@ beforeAll(async () => {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
-  app.decorate('container', { db: {}, redis: {} });
+  app.decorate('container', { db: {} as unknown as Container['db'] });
   app.decorate('eventBus', new InMemoryEventBus());
 
-  // Mock the requireSession preHandler
   app.decorate('requireSession', async (request: FastifyRequest) => {
     request.session = mockSession;
     request.userId = mockSession.userId;
   });
-  app.decorateRequest('session', null);
+  app.decorateRequest('session', null as unknown as typeof mockSession);
   app.decorateRequest('userId', '');
 
   await app.register(errorHandlerPlugin);
@@ -259,15 +290,16 @@ beforeAll(async () => {
 });
 ```
 
-This gives every request a valid session without hitting Redis/DB.
-To test the 401 path, create a separate test that doesn't set up the mock,
-or override `requireSession` to throw.
+This gives every request a valid session without hitting the database. To test the
+401 path, create a separate test that doesn't set up the mock, or override
+`requireSession` to throw.
 
 ### Testing 401 responses
 
 To test that routes actually reject unauthenticated requests, either:
 
 1. **Don't set the Authorization header** in integration tests (real middleware runs):
+
 ```typescript
 it('returns 401 without auth header', async () => {
   const response = await app.inject({
@@ -280,6 +312,7 @@ it('returns 401 without auth header', async () => {
 ```
 
 2. **Set an invalid token**:
+
 ```typescript
 it('returns 401 with invalid token', async () => {
   const response = await app.inject({
@@ -302,7 +335,7 @@ let authToken: string;
 
 beforeAll(async () => {
   testDb = await createTestDb();
-  app = await buildTestApp({ db: testDb.db, redis: testRedis });
+  app = await buildTestApp({ db: testDb.db });
 
   // Create a user and session to get a valid token
   const registerResponse = await app.inject({
@@ -357,10 +390,11 @@ function authRequest(app: FastifyInstance, token: string) {
 
 - [ ] `UnauthorizedError` added to `@identity-starter/core` and exported
 - [ ] Error handler STATUS_MAP includes `UNAUTHORIZED: 401` and `FORBIDDEN: 403`
-- [ ] Auth plugin created with `requireSession` decorator
+- [ ] Auth plugin created with `requireSession` decorator (raw token → `validateSession(db, rawToken)`; hashes stored in DB)
 - [ ] Fastify type declarations for `request.session`, `request.userId`, `fastify.requireSession`
 - [ ] Auth plugin registered in `app.ts` after container but before modules
+- [ ] Route modules use `FastifyPluginAsyncZod` and route `schema` for validation (no `validate()` from core)
 - [ ] Protected routes use `{ preHandler: fastify.requireSession }`
-- [ ] Unit tests mock `requireSession` via `app.decorate`
+- [ ] Unit tests mock `requireSession` and use `decorateRequest('session', null as unknown as typeof mockSession)`
 - [ ] Integration tests create real sessions and send Bearer tokens
 - [ ] 401 responses tested for missing/invalid/expired tokens
