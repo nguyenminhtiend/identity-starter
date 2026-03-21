@@ -18,7 +18,7 @@ declare module 'fastify' {
 export const authPlugin = fp(async (fastify) => {
   const { db } = fastify.container;
 
-  fastify.decorateRequest('session', null);
+  fastify.decorateRequest('session', null as unknown as Session);
   fastify.decorateRequest('userId', '');
 
   fastify.decorate('requireSession', async (request: FastifyRequest) => {
