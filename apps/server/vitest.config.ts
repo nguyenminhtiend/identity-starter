@@ -6,6 +6,7 @@ export default mergeConfig(
   defineConfig({
     test: {
       root: '.',
+      exclude: ['dist/**', 'node_modules/**'],
     },
   }),
 );

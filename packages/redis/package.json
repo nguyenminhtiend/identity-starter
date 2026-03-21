@@ -11,10 +11,10 @@
     "dev": "tsc --watch"
   },
   "dependencies": {
-    "ioredis": "^5.4.2"
+    "ioredis": "^5.10.1"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "typescript": "^5.7.3"
+    "typescript": "^5.9.3"
   }
 }

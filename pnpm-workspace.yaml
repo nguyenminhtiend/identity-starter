@@ -1,3 +1,9 @@
 packages:
-  - "apps/*"
-  - "packages/*"
+  - apps/*
+  - packages/*
+
+allowedBuiltDependencies: '["esbuild", "lefthook", "@node-rs/argon2"]'
+
+ignoredBuiltDependencies:
+  - esbuild
+  - lefthook

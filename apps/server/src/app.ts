@@ -1,36 +1,32 @@
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
-import type { Database } from '@identity-starter/db';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import {
-  type ZodTypeProvider,
   serializerCompiler,
   validatorCompiler,
+  type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import type { Emitter } from 'mitt';
+import { type Container, containerPlugin } from './core/container.js';
+import { errorHandlerPlugin } from './core/plugins/error-handler.js';
 import { createEventBus } from './infra/event-bus.js';
+import type { AllEvents } from './infra/events.js';
 import { registerModules } from './infra/module-loader.js';
-import type { UserEvents } from './modules/user/user.events.js';
-
-export type AllEvents = UserEvents;
 
 declare module 'fastify' {
   interface FastifyInstance {
-    db: Database;
     eventBus: Emitter<AllEvents>;
   }
 }
 
 export interface AppOptions {
-  db: Database;
-  logger?: boolean | object;
+  container: Container;
+  logger?: FastifyServerOptions['logger'];
 }
 
 export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: options.logger ?? {
-      level: 'info',
-    },
+    logger: options.logger ?? { level: 'info' },
   }).withTypeProvider<ZodTypeProvider>();
 
   app.setValidatorCompiler(validatorCompiler);
@@ -38,9 +34,10 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
 
   await app.register(cors);
   await app.register(helmet);
+  await app.register(containerPlugin, { container: options.container });
+  await app.register(errorHandlerPlugin);
 
   const eventBus = createEventBus<AllEvents>();
-  app.decorate('db', options.db);
   app.decorate('eventBus', eventBus);
 
   app.get('/health', async () => ({ status: 'ok' }));

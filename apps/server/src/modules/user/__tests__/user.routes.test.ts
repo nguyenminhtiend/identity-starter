@@ -3,32 +3,21 @@ import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import mitt from 'mitt';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AllEvents } from '../../../app.js';
+import type { Container } from '../../../core/container.js';
+import type { Env } from '../../../core/env.js';
+import type { AllEvents } from '../../../infra/events.js';
 import type { UserRepository } from '../user.repository.js';
-import { registerUserRoutes } from '../user.routes.js';
+import { userRoutes } from '../user.routes.js';
 import { UserService } from '../user.service.js';
 
-// In-memory fake repository for route testing
 const store = new Map<string, Record<string, unknown>>();
 
 function resetStore() {
   store.clear();
 }
 
-// Build a test app with in-memory store
-async function buildTestApp() {
-  resetStore();
-
-  const app = Fastify({ logger: false });
-  app.setValidatorCompiler(validatorCompiler);
-  app.setSerializerCompiler(serializerCompiler);
-
-  const eventBus = mitt<AllEvents>();
-  app.decorate('db', {} as Database);
-  app.decorate('eventBus', eventBus);
-
-  // Create a fake repository that uses the in-memory store
-  const fakeRepo = {
+function createFakeRepo(): UserRepository {
+  return {
     create: async (id: string, input: Record<string, unknown>) => {
       const user = {
         id,
@@ -61,9 +50,7 @@ async function buildTestApp() {
       Object.assign(user, input, { updatedAt: new Date() });
       return user;
     },
-    delete: async (id: string) => {
-      return store.delete(id);
-    },
+    delete: async (id: string) => store.delete(id),
     list: async (page: number, pageSize: number) => {
       const all = Array.from(store.values());
       const offset = (page - 1) * pageSize;
@@ -73,14 +60,26 @@ async function buildTestApp() {
       };
     },
   } as unknown as UserRepository;
+}
 
-  const service = new UserService(fakeRepo, eventBus);
-  await app.register(
-    async (instance) => {
-      registerUserRoutes(instance, service);
-    },
-    { prefix: '/api' },
-  );
+async function buildTestApp() {
+  resetStore();
+
+  const app = Fastify({ logger: false });
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
+
+  const eventBus = mitt<AllEvents>();
+  const fakeContainer: Container = {
+    db: {} as Database,
+    env: {} as Env,
+  };
+
+  app.decorate('container', fakeContainer);
+  app.decorate('eventBus', eventBus);
+
+  const service = new UserService(createFakeRepo(), eventBus);
+  await app.register(userRoutes, { prefix: '/api/users', service });
 
   return app;
 }

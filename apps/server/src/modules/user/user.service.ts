@@ -1,5 +1,5 @@
-import { ConflictError, NotFoundError, type Result, err, ok } from '@identity-starter/core';
 import type { PaginatedResult, PaginationInput } from '@identity-starter/core';
+import { ConflictError, err, NotFoundError, ok, type Result } from '@identity-starter/core';
 import type { Emitter } from 'mitt';
 import { nanoid } from 'nanoid';
 import type { UserEvents } from './user.events.js';
