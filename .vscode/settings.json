@@ -6,7 +6,8 @@
   // 2. Configure actions to run on save
   "editor.codeActionsOnSave": {
     // Tell Biome to apply safe fixes and organize imports
-    "source.fixAll.biome": "explicit"
+    "source.fixAll.biome": "explicit",
+    "source.organizeImports.biome": "explicit"
   },
 
   // 3. Completely disable the ESLint and Prettier extensions for this specific workspace

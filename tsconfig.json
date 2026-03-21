@@ -4,8 +4,10 @@
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    "sourceMap": false
+    "sourceMap": false,
+    "rootDir": "."
   },
+  "files": [],
   "references": [
     { "path": "packages/core" },
     { "path": "packages/db" },
