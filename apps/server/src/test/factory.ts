@@ -19,7 +19,6 @@ export function makeUser(overrides?: Partial<User>): User {
     id: crypto.randomUUID(),
     email: `user${counter}_${Date.now()}@test.com`,
     emailVerified: false,
-    passwordHash: 'hashed_password',
     displayName: `Test User ${counter}`,
     status: 'pending_verification',
     metadata: {},

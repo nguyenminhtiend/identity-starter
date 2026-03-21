@@ -4,7 +4,12 @@ import { type DomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js'
 import { createTestDb, type TestDb } from '../../../test/db-helper.js';
 import { makeCreateUserInput } from '../../../test/factory.js';
 import { USER_EVENTS } from '../user.events.js';
-import { createUser, findUserByEmail, findUserById } from '../user.service.js';
+import {
+  createUser,
+  findUserByEmail,
+  findUserByEmailWithPassword,
+  findUserById,
+} from '../user.service.js';
 
 let testDb: TestDb;
 let eventBus: InMemoryEventBus;
@@ -65,8 +70,9 @@ describe('createUser', () => {
 
   it('stores nullable passwordHash', async () => {
     const input = makeCreateUserInput({ passwordHash: null });
-    const user = await createUser(testDb.db, eventBus, input);
+    await createUser(testDb.db, eventBus, input);
 
+    const user = await findUserByEmailWithPassword(testDb.db, input.email);
     expect(user.passwordHash).toBeNull();
   });
 

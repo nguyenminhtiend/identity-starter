@@ -4,12 +4,15 @@ export interface User {
   id: string;
   email: string;
   emailVerified: boolean;
-  passwordHash: string | null;
   displayName: string;
   status: 'active' | 'suspended' | 'pending_verification';
   metadata: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export interface UserWithPassword extends User {
+  passwordHash: string | null;
 }
 
 export const createUserSchema = z.object({
