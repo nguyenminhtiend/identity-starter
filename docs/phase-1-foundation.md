@@ -4,13 +4,16 @@
 
 ## Context
 
-Build a learning + reference implementation of an identity provider (like Auth0/Keycloak) to deeply understand IdP internals. This is Phase 1 of 4, establishing the monorepo scaffold, shared infrastructure, database layer, and the first module (User Management).
+Build a learning + reference implementation of an identity provider (like Auth0/Keycloak) to deeply understand IdP internals. This is Phase 1 of 7, establishing the monorepo scaffold, shared infrastructure, database layer, and the first module (User Management).
 
 **Phases overview:**
 1. **Foundation** (this phase) — Scaffold, DB, Redis, event bus, User module (internal service, no HTTP routes)
-2. **Authentication** — Auth API, account self-service API, sessions, passkeys, login UI
-3. **OAuth2/OIDC** — Authorization server, client management, token service, consent UI
-4. **Admin & Governance** — Admin management API (`/api/admin/*`), RBAC, audit logging, admin dashboard
+2. **Auth Core** — Sessions, password auth (register/login/logout/change-password), Bearer middleware
+3. **Passkeys** — WebAuthn registration + authentication, challenge storage
+4. **Account & Security** — Self-service (profile/sessions/passkeys), email verification, MFA (TOTP), rate limiting, password reset
+5. **OAuth2/OIDC** — Authorization server, PKCE, DPoP, PAR, client management, tokens, JWKS, consent
+6. **Admin & Governance** — RBAC, audit logs, admin user/session/role management
+7. **Frontend** — Next.js 15 + shadcn/ui (login, account, consent, admin dashboard)
 
 ---
 
@@ -22,8 +25,8 @@ Build a learning + reference implementation of an identity provider (like Auth0/
 | Package Manager | pnpm |
 | Monorepo | Turborepo |
 | Backend Framework | Fastify |
-| Frontend Framework | Next.js 15 (Phase 2+) |
-| UI Components | shadcn/ui + Tailwind CSS v4 (Phase 2+) |
+| Frontend Framework | Next.js 15 (Phase 7) |
+| UI Components | shadcn/ui + Tailwind CSS v4 (Phase 7) |
 | Database | PostgreSQL + Drizzle ORM |
 | Cache/Sessions | Redis + ioredis |
 | Validation | Zod (+ fastify-type-provider-zod) |
@@ -36,7 +39,7 @@ Build a learning + reference implementation of an identity provider (like Auth0/
 | Code Quality | Biome (lint + format) |
 | Git Hooks | lefthook |
 | Testing | Vitest (unit/integration) + Playwright (E2E) |
-| ID Generation | nanoid |
+| ID Generation | UUIDv7 (custom uuidv7 helper) |
 | Date Handling | date-fns |
 | Dev Runner | tsx |
 | Security | @fastify/cors + @fastify/helmet |
@@ -81,7 +84,7 @@ Build a learning + reference implementation of an identity provider (like Auth0/
 ### users
 | Column | Type | Notes |
 |--------|------|-------|
-| id | text PK | nanoid |
+| id | uuid PK | uuidv7() |
 | email | text | unique, indexed |
 | emailVerified | boolean | default false |
 | passwordHash | text | nullable (passkey-only users) |

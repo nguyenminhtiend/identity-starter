@@ -8,6 +8,7 @@ import {
 } from 'fastify-type-provider-zod';
 import { type Container, containerPlugin } from './core/container-plugin.js';
 import { registerModules } from './core/module-loader.js';
+import { authPlugin } from './core/plugins/auth.js';
 import { errorHandlerPlugin } from './core/plugins/error-handler.js';
 import { type EventBus, InMemoryEventBus } from './infra/event-bus.js';
 
@@ -38,6 +39,8 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
 
   const eventBus = options.eventBus ?? new InMemoryEventBus();
   app.decorate('eventBus', eventBus);
+
+  await app.register(authPlugin);
 
   app.get('/health', async () => ({ status: 'ok' }));
 

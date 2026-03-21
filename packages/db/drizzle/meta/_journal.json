@@ -15,6 +15,13 @@
       "when": 1774101339907,
       "tag": "0001_large_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774103432472,
+      "tag": "0002_secret_rachel_grey",
+      "breakpoints": true
     }
   ]
 }

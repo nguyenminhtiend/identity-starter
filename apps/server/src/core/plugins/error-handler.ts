@@ -6,6 +6,8 @@ const STATUS_MAP: Record<string, number> = {
   NOT_FOUND: 404,
   CONFLICT: 409,
   VALIDATION_ERROR: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
 };
 
 export const errorHandlerPlugin = fp(async (fastify) => {

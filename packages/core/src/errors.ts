@@ -22,6 +22,13 @@ export class ConflictError extends DomainError {
   }
 }
 
+export class UnauthorizedError extends DomainError {
+  constructor(message = 'Unauthorized') {
+    super('UNAUTHORIZED', message);
+    this.name = 'UnauthorizedError';
+  }
+}
+
 export class ValidationError extends DomainError {
   public readonly fields: Record<string, string>;
 

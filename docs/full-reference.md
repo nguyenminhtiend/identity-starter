@@ -44,11 +44,13 @@
 | `token` | `text` | UNIQUE, INDEXED, NOT NULL | — |
 | `user_id` | `uuid` | FK → `users.id` (CASCADE DELETE), NOT NULL | — |
 | `expires_at` | `timestamp` | NOT NULL | — |
+| `last_active_at` | `timestamp` | NOT NULL | `now()` |
 | `ip_address` | `varchar(45)` | NULLABLE | — |
 | `user_agent` | `text` | NULLABLE | — |
 | `created_at` | `timestamp` | NOT NULL | `now()` |
 
 **Safe columns** (`sessionColumns`): all columns exposed.
+**Note**: `last_active_at` enables idle timeout detection (NIST 800-63B). Updated on each validated request.
 
 ---
 
@@ -72,7 +74,94 @@
 
 ---
 
-### Planned Tables (Phase 3 — OAuth2/OIDC)
+### `email_verification_tokens` (Phase 4)
+
+| Column | Type | Constraints | Default |
+|--------|------|-------------|---------|
+| `id` | `uuid` | PK | `uuidv7()` |
+| `user_id` | `uuid` | FK → `users.id` (CASCADE DELETE), NOT NULL | — |
+| `token` | `text` | UNIQUE, INDEXED, NOT NULL | — |
+| `expires_at` | `timestamp` | NOT NULL | — |
+| `used_at` | `timestamp` | NULLABLE | — |
+| `created_at` | `timestamp` | NOT NULL | `now()` |
+
+**Note**: Short TTL (~24h). One-time use. On verification: set `users.email_verified = true`, `users.status = 'active'`.
+
+---
+
+### `webauthn_challenges` (Phase 3)
+
+| Column | Type | Constraints | Default |
+|--------|------|-------------|---------|
+| `id` | `uuid` | PK | `uuidv7()` |
+| `user_id` | `uuid` | FK → `users.id` (CASCADE DELETE), NULLABLE | — |
+| `challenge` | `text` | UNIQUE, NOT NULL | — |
+| `type` | `enum('registration','authentication')` | NOT NULL | — |
+| `expires_at` | `timestamp` | NOT NULL | — |
+| `created_at` | `timestamp` | NOT NULL | `now()` |
+
+**Note**: Short TTL (~5 min). Consumed on verify, cleaned up lazily.
+
+---
+
+### `login_attempts` (Phase 4)
+
+| Column | Type | Constraints | Default |
+|--------|------|-------------|---------|
+| `id` | `uuid` | PK | `uuidv7()` |
+| `email` | `varchar(255)` | INDEXED, NOT NULL | — |
+| `ip_address` | `varchar(45)` | INDEXED, NOT NULL | — |
+| `success` | `boolean` | NOT NULL | — |
+| `created_at` | `timestamp` | NOT NULL | `now()` |
+
+**Note**: Used for rate limiting and account lockout. Query recent failures per email/IP to enforce progressive delays. Rows older than 24h can be pruned.
+
+---
+
+### `totp_secrets` (Phase 4)
+
+| Column | Type | Constraints | Default |
+|--------|------|-------------|---------|
+| `id` | `uuid` | PK | `uuidv7()` |
+| `user_id` | `uuid` | FK → `users.id` (CASCADE DELETE), UNIQUE, NOT NULL | — |
+| `secret` | `text` | NOT NULL | — |
+| `verified` | `boolean` | NOT NULL | `false` |
+| `created_at` | `timestamp` | NOT NULL | `now()` |
+
+**Note**: One TOTP secret per user. `secret` is encrypted at rest. `verified` flips to true after first successful verification.
+
+---
+
+### `recovery_codes` (Phase 4)
+
+| Column | Type | Constraints | Default |
+|--------|------|-------------|---------|
+| `id` | `uuid` | PK | `uuidv7()` |
+| `user_id` | `uuid` | FK → `users.id` (CASCADE DELETE), NOT NULL | — |
+| `code_hash` | `text` | NOT NULL | — |
+| `used_at` | `timestamp` | NULLABLE | — |
+| `created_at` | `timestamp` | NOT NULL | `now()` |
+
+**Note**: 8 codes generated at MFA enrollment. Each code is single-use. Hashed with Argon2. Regeneration invalidates all previous codes.
+
+---
+
+### `password_reset_tokens` (Phase 4)
+
+| Column | Type | Constraints | Default |
+|--------|------|-------------|---------|
+| `id` | `uuid` | PK | `uuidv7()` |
+| `user_id` | `uuid` | FK → `users.id` (CASCADE DELETE), NOT NULL | — |
+| `token` | `text` | UNIQUE, INDEXED, NOT NULL | — |
+| `expires_at` | `timestamp` | NOT NULL | — |
+| `used_at` | `timestamp` | NULLABLE | — |
+| `created_at` | `timestamp` | NOT NULL | `now()` |
+
+**Note**: 1-hour TTL. Single-use. On reset: hash new password, revoke all sessions, mark token used.
+
+---
+
+### Planned Tables (Phase 5 — OAuth2/OIDC)
 
 #### `oauth_clients`
 
@@ -86,11 +175,17 @@
 | `grant_types` | `text[]` | `authorization_code`, `client_credentials`, `refresh_token` |
 | `response_types` | `text[]` | `code` |
 | `scope` | `text` | Space-delimited scopes |
-| `token_endpoint_auth_method` | `text` | `client_secret_basic`, `client_secret_post`, `none` |
+| `token_endpoint_auth_method` | `text` | `client_secret_basic`, `client_secret_post`, `private_key_jwt`, `none` |
+| `jwks_uri` | `text` | NULLABLE — for `private_key_jwt` client auth |
+| `jwks` | `jsonb` | NULLABLE — inline JWKS alternative to `jwks_uri` |
 | `is_confidential` | `boolean` | Public vs confidential |
 | `status` | `enum` | `active`, `suspended` |
 | `created_at` | `timestamp` | — |
 | `updated_at` | `timestamp` | — |
+| `logo_uri` | `text` | NULLABLE — Client logo for consent screen |
+| `tos_uri` | `text` | NULLABLE — Terms of service URL |
+| `policy_uri` | `text` | NULLABLE — Privacy policy URL |
+| `application_type` | `text` | `web` or `native` — affects redirect URI validation |
 
 #### `authorization_codes`
 
@@ -104,6 +199,8 @@
 | `scope` | `text` | Granted scopes |
 | `code_challenge` | `text` | PKCE S256 |
 | `code_challenge_method` | `text` | Always `S256` |
+| `nonce` | `text` | OIDC nonce — returned in ID token |
+| `state` | `text` | Client-provided state for additional validation |
 | `expires_at` | `timestamp` | Short-lived (~10min) |
 | `used_at` | `timestamp` | One-time use enforcement |
 
@@ -133,7 +230,7 @@
 
 ---
 
-### Planned Tables (Phase 4 — Admin & Governance)
+### Planned Tables (Phase 6 — Admin & Governance)
 
 #### `roles`
 
@@ -207,8 +304,8 @@ Request body (validated via `createUserSchema`):
 {
   "email": "user@example.com",
   "displayName": "Jane Doe",
-  "passwordHash": "...",    // optional, nullable
-  "metadata": { ... }       // optional
+  "password": "...",         // optional — hashed server-side with Argon2
+  "metadata": { ... }        // optional
 }
 ```
 
@@ -218,7 +315,7 @@ Request body (validated via `createUserSchema`):
 | `400` | Invalid/missing email or displayName | `{ error, code: 'VALIDATION_ERROR', details }` |
 | `409` | Duplicate email | `{ error, code: 'CONFLICT' }` |
 
-**Note**: `passwordHash` is never included in responses.
+**Note**: `password` is hashed server-side before storage. `passwordHash` is never included in responses.
 
 ---
 
@@ -239,53 +336,66 @@ Path params (validated via `userIdParamSchema`):
 
 ### Planned: Auth Module (Phase 2)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/auth/register` | Register with email + password |
-| `POST` | `/api/auth/login` | Login with email + password |
-| `POST` | `/api/auth/logout` | Destroy session |
-| `GET` | `/api/auth/me` | Get current user (requires session) |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/auth/register` | Public | Register with email + password (rate limited) |
+| `POST` | `/api/auth/login` | Public | Login with email + password (rate limited, lockout) |
+| `POST` | `/api/auth/logout` | Session | Destroy session |
+| `POST` | `/api/auth/change-password` | Session | Change password (verify current first) |
+| `POST` | `/api/auth/verify-email` | Public | Verify email with token |
+| `POST` | `/api/auth/resend-verification` | Public | Resend verification email (rate limited) |
+
+**Password policy** (NIST 800-63B): min 8 chars, no complexity rules, check against breached password lists.
+**Rate limiting**: per-IP on public endpoints. Progressive delay after 5 failed logins per account.
 
 ---
 
-### Planned: Passkey Module (Phase 2)
+### Planned: Passkey Module (Phase 3)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/passkeys/register/options` | Generate WebAuthn registration options |
-| `POST` | `/api/passkeys/register/verify` | Verify & store passkey registration |
-| `POST` | `/api/passkeys/login/options` | Generate WebAuthn authentication options |
-| `POST` | `/api/passkeys/login/verify` | Verify passkey authentication |
-| `GET` | `/api/passkeys` | List user's passkeys (requires session) |
-| `DELETE` | `/api/passkeys/:id` | Remove a passkey (requires session) |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/auth/passkeys/register/options` | Session | Generate WebAuthn registration options |
+| `POST` | `/api/auth/passkeys/register/verify` | Session | Verify & store passkey registration |
+| `POST` | `/api/auth/passkeys/login/options` | Public | Generate WebAuthn authentication options |
+| `POST` | `/api/auth/passkeys/login/verify` | Public | Verify passkey authentication, return session |
 
 ---
 
-### Planned: Account Module (Phase 2)
+### Planned: Account Module (Phase 4)
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/account/profile` | Get own profile |
-| `PATCH` | `/api/account/profile` | Update display name |
-| `POST` | `/api/account/change-password` | Change password |
-| `DELETE` | `/api/account` | Deactivate/delete account |
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `GET` | `/api/account/profile` | Session | Get own profile |
+| `PATCH` | `/api/account/profile` | Session | Update display name / metadata |
+| `GET` | `/api/account/sessions` | Session | List own active sessions |
+| `DELETE` | `/api/account/sessions/:id` | Session | Revoke own session |
+| `GET` | `/api/account/passkeys` | Session | List own passkeys |
+| `PATCH` | `/api/account/passkeys/:id` | Session | Rename own passkey |
+| `DELETE` | `/api/account/passkeys/:id` | Session | Delete own passkey |
 
 ---
 
-### Planned: OAuth2/OIDC Module (Phase 3)
+### Planned: OAuth2/OIDC Module (Phase 5)
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/oauth/authorize` | Authorization endpoint |
-| `POST` | `/oauth/token` | Token endpoint |
+| `POST` | `/oauth/authorize` | PAR (Pushed Authorization Request) |
+| `POST` | `/oauth/token` | Token endpoint (supports DPoP proof) |
 | `POST` | `/oauth/revoke` | Token revocation |
-| `GET` | `/oauth/userinfo` | OIDC UserInfo |
+| `GET` | `/oauth/userinfo` | OIDC UserInfo (standard claims: `sub`, `email`, `email_verified`, `name`) |
 | `GET` | `/.well-known/openid-configuration` | OIDC Discovery |
 | `GET` | `/.well-known/jwks.json` | JSON Web Key Set |
+| `POST` | `/oauth/introspect` | Token introspection (RFC 7662) |
+| `POST` | `/oauth/par` | Pushed Authorization Request (RFC 9126) |
+| `GET` | `/oauth/end-session` | RP-Initiated Logout (OIDC) |
+
+**OAuth 2.1 alignment**: PKCE required for all clients (no implicit/ROPC grants), refresh token rotation, DPoP support.
+**Key rotation**: Signing keys rotated via JWKS. Previous key retained for grace period to validate in-flight tokens.
 
 ---
 
-### Planned: Admin Module (Phase 4)
+### Planned: Admin Module (Phase 6)
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -351,6 +461,25 @@ Path params (validated via `userIdParamSchema`):
 | `findUserByEmail` | `(db, email: string) => Promise<User>` | Find by email or throw `NotFoundError` |
 | `findUserByEmailWithPassword` | `(db, email: string) => Promise<UserWithPassword>` | Find by email with `passwordHash` or throw `NotFoundError` |
 
+### Planned: Session Service (`apps/server/src/modules/session`)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `createSession` | `(db, eventBus, input) => Promise<Session>` | Insert session with TTL, emit `session.created` |
+| `validateSession` | `(db, token) => Promise<Session \| null>` | Query by token where not expired, update `last_active_at` |
+| `revokeSession` | `(db, eventBus, id) => Promise<void>` | Hard-delete session, emit `session.revoked` |
+| `revokeAllUserSessions` | `(db, eventBus, userId) => Promise<void>` | Bulk delete all user sessions |
+| `deleteExpiredSessions` | `(db) => Promise<void>` | Cleanup: delete expired rows |
+
+### Planned: Auth Service (`apps/server/src/modules/auth`)
+
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `register` | `(db, eventBus, input) => Promise<{ user, token }>` | Create user + session, hash password with Argon2 |
+| `login` | `(db, eventBus, input, meta) => Promise<{ user, token }>` | Verify password, check status, create session |
+| `logout` | `(db, eventBus, sessionId) => Promise<void>` | Revoke session |
+| `changePassword` | `(db, eventBus, userId, input) => Promise<void>` | Verify current, hash new, update |
+
 ### Infrastructure (`apps/server/src/infra`)
 
 | Export | Description |
@@ -386,7 +515,7 @@ interface DomainEvent<T = unknown> {
 |-------|----------|---------|------------|
 | `user.created` | `USER_EVENTS.CREATED` | `{ user: User }` | `createUser()` |
 
-### Planned Events (Phase 2)
+### Planned Events (Phase 2-3)
 
 | Event | Emitted By |
 |-------|------------|
@@ -399,7 +528,7 @@ interface DomainEvent<T = unknown> {
 | `account.password.changed` | Account service |
 | `account.deactivated` | Account service |
 
-### Planned Events (Phase 3)
+### Planned Events (Phase 5)
 
 | Event | Emitted By |
 |-------|------------|
@@ -407,6 +536,17 @@ interface DomainEvent<T = unknown> {
 | `oauth.token.issued` | Token service |
 | `oauth.token.revoked` | Token service |
 | `oauth.consent.granted` | OAuth service |
+
+### Planned Events (Phase 4)
+
+| Event | Emitted By |
+|-------|------------|
+| `mfa.totp.enrolled` | MFA service |
+| `mfa.totp.verified` | MFA service |
+| `mfa.recovery_codes.generated` | MFA service |
+| `mfa.recovery_code.used` | MFA service |
+| `account.password_reset.requested` | Account service |
+| `account.password_reset.completed` | Account service |
 
 ---
 
@@ -429,11 +569,55 @@ Validated via Zod in `apps/server/src/core/env.ts`:
 
 ---
 
+## Security Measures
+
+### Phase 2 — Authentication Security
+
+| Concern | Approach |
+|---------|----------|
+| **Password hashing** | Argon2id via `@node-rs/argon2` (OWASP recommended) |
+| **Password policy** | NIST 800-63B: min 8 chars, no complexity rules, breached password check |
+| **Rate limiting** | Per-IP on login/register. Fastify `@fastify/rate-limit` or custom middleware |
+| **Account lockout** | Progressive delay after 5 failed logins per email (via `login_attempts` table). No hard lockout (prevents DoS) |
+| **Session tokens** | `crypto.randomBytes(32).toString('base64url')` — 256-bit entropy |
+| **Session expiry** | Absolute timeout (7 days default) + idle timeout via `last_active_at` |
+| **CSRF** | API-first with `Authorization: Bearer` header — SameSite cookies not used, so CSRF is mitigated by design |
+| **Email verification** | Required before `status` transitions to `active`. Token-based with 24h TTL |
+| **Timing attacks** | Constant-time comparison for tokens and password verification |
+
+### Phase 5 — OAuth2/OIDC Security
+
+| Concern | Approach |
+|---------|----------|
+| **PKCE** | Required for all clients (S256 only) — OAuth 2.1 mandate |
+| **DPoP** | RFC 9449 — Phase 5 feature: sender-constrained access tokens (proof-of-possession at token endpoint) |
+| **PAR** | RFC 9126 — Phase 5 feature: pushed authorization requests via `POST /oauth/par` to prevent authorization request tampering |
+| **Token storage** | Refresh tokens hashed in DB. Access tokens are short-lived JWTs (5–15 min) |
+| **Refresh rotation** | Single-use with `family_id` for replay detection |
+| **Key rotation** | JWK rotation with grace period for in-flight token validation |
+
+### Phase 4 — Account Security & MFA
+
+| Concern | Approach |
+|---------|----------|
+| **MFA (TOTP)** | RFC 6238 TOTP via `otpauth` library. Required for AAL2 assurance level |
+| **Recovery codes** | 8 single-use codes generated at MFA enrollment. Stored hashed (Argon2) |
+| **Step-up authentication** | Sensitive operations (password change, passkey management, consent) require re-authentication |
+| **Breached password check** | Required per NIST 800-63B — check against HaveIBeenPwned k-anonymity API on registration and password change |
+| **Password reset** | Token-based reset flow with 1-hour TTL. Requires email delivery integration |
+| **Account recovery** | Recovery codes as last-resort factor. Admin-initiated recovery for enterprise deployments |
+| **`acr` / `amr` claims** | OIDC claims indicating authentication strength (AAL1/AAL2) and methods used (`pwd`, `hwk`, `otp`) |
+
+---
+
 ## Phase Roadmap
 
 | Phase | Status | Focus |
 |-------|--------|-------|
 | **Phase 1** | Done | Foundation — monorepo, DB, Redis, User module |
-| **Phase 2** | In Progress (schemas created) | Authentication — password, passkey, sessions, account self-service |
-| **Phase 3** | Not Started | OAuth2/OIDC — authorization server, client management, tokens |
-| **Phase 4** | Not Started | Admin & Governance — RBAC, audit logs, admin dashboard |
+| **Phase 2** | In Progress (Layer 0 done) | Auth Core — sessions, password auth (register/login/logout/change-password), Bearer middleware |
+| **Phase 3** | Not Started | Passkeys — WebAuthn registration + authentication, challenge storage |
+| **Phase 4** | Not Started | Account & Security — self-service (profile/sessions/passkeys), email verification, MFA (TOTP + recovery codes), rate limiting, password reset |
+| **Phase 5** | Not Started | OAuth2/OIDC — authorization server, PKCE, DPoP, PAR, client management, tokens, JWKS, consent, RP-Initiated Logout |
+| **Phase 6** | Not Started | Admin & Governance — RBAC, audit logs, admin user/session/role management |
+| **Phase 7** | Not Started | Frontend — Next.js 15 + shadcn/ui (login, account, consent, admin dashboard) |
