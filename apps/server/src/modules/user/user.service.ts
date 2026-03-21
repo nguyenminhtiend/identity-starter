@@ -1,116 +1,81 @@
-import type { PaginatedResult, PaginationInput } from '@identity-starter/core';
 import { ConflictError, err, NotFoundError, ok, type Result } from '@identity-starter/core';
-import { nanoid } from 'nanoid';
+import type { Database } from '@identity-starter/db';
+import { users } from '@identity-starter/db';
+import { eq } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import { USER_EVENTS } from './user.events.js';
-import type { UserRepository } from './user.repository.js';
-import type { CreateUserInput, UpdateUserInput, User } from './user.types.js';
+import type { CreateUserInput, User } from './user.schemas.js';
 
-export class UserService {
-  constructor(
-    private repo: UserRepository,
-    private eventBus: EventBus,
-  ) {}
+type UserRow = typeof users.$inferSelect;
 
-  async create(input: CreateUserInput): Promise<Result<User, ConflictError>> {
-    const existing = await this.repo.findByEmail(input.email);
-    if (existing) {
-      return err(new ConflictError('User', 'email', input.email));
-    }
+function mapToUser(row: UserRow): User {
+  return {
+    id: row.id,
+    email: row.email,
+    emailVerified: row.emailVerified,
+    passwordHash: row.passwordHash,
+    displayName: row.displayName,
+    status: row.status as User['status'],
+    metadata: row.metadata as Record<string, unknown>,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
 
-    const user = await this.repo.create(nanoid(), input);
-    await this.eventBus.publish(createDomainEvent(USER_EVENTS.CREATED, { user }));
-    return ok(user);
+export function stripPasswordHash(user: User) {
+  const { passwordHash, ...rest } = user;
+  return rest;
+}
+
+export interface UserService {
+  create(input: CreateUserInput): Promise<Result<User, ConflictError>>;
+  findById(id: string): Promise<Result<User, NotFoundError>>;
+  findByEmail(email: string): Promise<Result<User, NotFoundError>>;
+}
+
+export function createUserService(db: Database, eventBus: EventBus): UserService {
+  async function findByEmailRow(email: string) {
+    const [row] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    return row ?? null;
   }
 
-  async findById(id: string): Promise<Result<User, NotFoundError>> {
-    const user = await this.repo.findById(id);
-    if (!user) {
-      return err(new NotFoundError('User', id));
-    }
-    return ok(user);
-  }
-
-  async findByEmail(email: string): Promise<Result<User, NotFoundError>> {
-    const user = await this.repo.findByEmail(email);
-    if (!user) {
-      return err(new NotFoundError('User', email));
-    }
-    return ok(user);
-  }
-
-  async update(
-    id: string,
-    input: UpdateUserInput,
-  ): Promise<Result<User, NotFoundError | ConflictError>> {
-    if (input.email) {
-      const existing = await this.repo.findByEmail(input.email);
-      if (existing && existing.id !== id) {
+  return {
+    async create(input) {
+      const existing = await findByEmailRow(input.email);
+      if (existing) {
         return err(new ConflictError('User', 'email', input.email));
       }
-    }
 
-    const user = await this.repo.update(id, input);
-    if (!user) {
-      return err(new NotFoundError('User', id));
-    }
+      const [row] = await db
+        .insert(users)
+        .values({
+          id: uuidv7(),
+          email: input.email,
+          displayName: input.displayName,
+          passwordHash: input.passwordHash ?? null,
+          metadata: input.metadata ?? {},
+        })
+        .returning();
+      const user = mapToUser(row);
+      await eventBus.publish(createDomainEvent(USER_EVENTS.CREATED, { user }));
+      return ok(user);
+    },
 
-    await this.eventBus.publish(createDomainEvent(USER_EVENTS.UPDATED, { user, changes: input }));
-    return ok(user);
-  }
+    async findById(id) {
+      const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+      if (!row) {
+        return err(new NotFoundError('User', id));
+      }
+      return ok(mapToUser(row));
+    },
 
-  async delete(id: string): Promise<Result<void, NotFoundError>> {
-    const deleted = await this.repo.delete(id);
-    if (!deleted) {
-      return err(new NotFoundError('User', id));
-    }
-    await this.eventBus.publish(createDomainEvent(USER_EVENTS.DELETED, { userId: id }));
-    return ok(undefined);
-  }
-
-  async list(pagination: PaginationInput): Promise<Result<PaginatedResult<User>>> {
-    const { data, total } = await this.repo.list(pagination.page, pagination.pageSize);
-    return ok({
-      data,
-      total,
-      page: pagination.page,
-      pageSize: pagination.pageSize,
-      totalPages: Math.ceil(total / pagination.pageSize),
-    });
-  }
-
-  async updatePassword(id: string, hash: string): Promise<Result<void, NotFoundError>> {
-    const user = await this.repo.update(id, { passwordHash: hash });
-    if (!user) {
-      return err(new NotFoundError('User', id));
-    }
-    return ok(undefined);
-  }
-
-  async verifyEmail(id: string): Promise<Result<void, NotFoundError>> {
-    const user = await this.repo.update(id, { emailVerified: true });
-    if (!user) {
-      return err(new NotFoundError('User', id));
-    }
-    await this.eventBus.publish(createDomainEvent(USER_EVENTS.EMAIL_VERIFIED, { userId: id }));
-    return ok(undefined);
-  }
-
-  async suspend(id: string): Promise<Result<void, NotFoundError>> {
-    const user = await this.repo.update(id, { status: 'suspended' });
-    if (!user) {
-      return err(new NotFoundError('User', id));
-    }
-    await this.eventBus.publish(createDomainEvent(USER_EVENTS.SUSPENDED, { userId: id }));
-    return ok(undefined);
-  }
-
-  async activate(id: string): Promise<Result<void, NotFoundError>> {
-    const user = await this.repo.update(id, { status: 'active' });
-    if (!user) {
-      return err(new NotFoundError('User', id));
-    }
-    await this.eventBus.publish(createDomainEvent(USER_EVENTS.ACTIVATED, { userId: id }));
-    return ok(undefined);
-  }
+    async findByEmail(email) {
+      const row = await findByEmailRow(email);
+      if (!row) {
+        return err(new NotFoundError('User', email));
+      }
+      return ok(mapToUser(row));
+    },
+  };
 }

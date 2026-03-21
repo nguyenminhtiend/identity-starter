@@ -1,23 +1,26 @@
 import { z } from 'zod';
 
+export interface User {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  passwordHash: string | null;
+  displayName: string;
+  status: 'active' | 'suspended' | 'pending_verification';
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export const createUserSchema = z.object({
-  email: z.string().email(),
+  email: z.email(),
   displayName: z.string().min(1).max(255),
   passwordHash: z.string().nullable().optional(),
   metadata: z.record(z.string(), z.unknown()).optional().default({}),
 });
 
-export const updateUserSchema = z.object({
-  email: z.string().email().optional(),
-  displayName: z.string().min(1).max(255).optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-
-export const paginationSchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-});
+export type CreateUserInput = z.infer<typeof createUserSchema>;
 
 export const userIdParamSchema = z.object({
-  id: z.string().min(1),
+  id: z.uuid(),
 });

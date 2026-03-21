@@ -21,8 +21,8 @@
     "fastify-plugin": "^5.1.0",
     "fastify-type-provider-zod": "^6.1.0",
     "mitt": "^3.0.1",
-    "nanoid": "^5.1.7",
     "pino": "^10.3.1",
+    "uuid": "^13.0.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

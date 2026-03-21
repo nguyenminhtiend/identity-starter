@@ -7,7 +7,7 @@
 Build a learning + reference implementation of an identity provider (like Auth0/Keycloak) to deeply understand IdP internals. This is Phase 1 of 4, establishing the monorepo scaffold, shared infrastructure, database layer, and the first module (User Management).
 
 **Phases overview:**
-1. **Foundation** (this phase) — Scaffold, DB, Redis, event bus, User module ✅
+1. **Foundation** (this phase) — Scaffold, DB, Redis, event bus, User module
 2. **Authentication** — Password auth, passkeys/WebAuthn, sessions, login UI
 3. **OAuth2/OIDC** — Authorization server, client registry, token service, consent UI
 4. **Admin & Governance** — Admin API, RBAC, audit logging, admin dashboard
@@ -18,7 +18,7 @@ Build a learning + reference implementation of an identity provider (like Auth0/
 
 | Category | Choice |
 |---|---|
-| Runtime | Node.js ≥22 |
+| Runtime | Node.js ≥24 |
 | Package Manager | pnpm |
 | Monorepo | Turborepo |
 | Backend Framework | Fastify |
@@ -43,77 +43,6 @@ Build a learning + reference implementation of an identity provider (like Auth0/
 
 ---
 
-## Monorepo Structure
-
-```
-identity-starter/
-├─ apps/
-│  └─ server/                      # Fastify IdP backend
-│     ├─ src/
-│     │  ├─ modules/
-│     │  │  └─ user/               # User Management module
-│     │  │     ├─ user.service.ts
-│     │  │     ├─ user.repository.ts
-│     │  │     ├─ user.routes.ts
-│     │  │     ├─ user.events.ts
-│     │  │     ├─ user.types.ts
-│     │  │     ├─ user.schemas.ts
-│     │  │     ├─ index.ts
-│     │  │     └─ __tests__/
-│     │  │        ├─ user.service.test.ts
-│     │  │        └─ user.routes.test.ts
-│     │  ├─ infra/
-│     │  │  ├─ event-bus.ts        # Typed mitt-based event bus
-│     │  │  └─ module-loader.ts    # Fastify plugin registration
-│     │  ├─ app.ts                 # Fastify app factory
-│     │  └─ server.ts              # Entry point
-│     ├─ vitest.config.ts
-│     ├─ tsconfig.json
-│     └─ package.json
-├─ packages/
-│  ├─ core/                        # Shared types, result pattern, errors
-│  │  ├─ src/
-│  │  │  ├─ result.ts             # Result<T, E> type
-│  │  │  ├─ errors.ts             # Base domain error types
-│  │  │  ├─ types.ts              # Shared types (pagination, IDs)
-│  │  │  └─ index.ts
-│  │  ├─ tsconfig.json
-│  │  └─ package.json
-│  ├─ db/                          # Drizzle schema + migrations
-│  │  ├─ src/
-│  │  │  ├─ schema/
-│  │  │  │  ├─ user.ts
-│  │  │  │  └─ index.ts
-│  │  │  ├─ client.ts             # DB connection factory
-│  │  │  ├─ migrate.ts            # Migration runner
-│  │  │  └─ index.ts
-│  │  ├─ drizzle/                  # Generated migrations
-│  │  ├─ drizzle.config.ts
-│  │  ├─ tsconfig.json
-│  │  └─ package.json
-│  ├─ redis/                       # Redis client wrapper
-│  │  ├─ src/
-│  │  │  ├─ client.ts
-│  │  │  └─ index.ts
-│  │  ├─ tsconfig.json
-│  │  └─ package.json
-│  └─ config/                      # Shared tooling configs
-│     ├─ biome.json
-│     ├─ tsconfig.base.json
-│     └─ vitest.shared.ts
-├─ turbo.json
-├─ pnpm-workspace.yaml
-├─ biome.json                      # Root extends packages/config
-├─ lefthook.yml                    # Git hooks config
-├─ .env.example
-├─ tsconfig.json                   # Root TS config
-├─ .claude/
-│  └─ CLAUDE.md                    # AI workflow instructions
-└─ package.json
-```
-
----
-
 ## Architecture Decisions
 
 ### 1. Module Pattern (Strict Boundaries)
@@ -124,17 +53,11 @@ identity-starter/
 - Each module owns its DB tables — no cross-module direct table access
 
 ### 2. Result Pattern (No Exceptions for Business Logic)
-```typescript
-type Result<T, E = Error> = { ok: true; value: T } | { ok: false; error: E }
-```
 - Service methods return `Result<T, DomainError>` instead of throwing
 - Exceptions reserved for unexpected/infrastructure failures only
 - Routes translate Results to HTTP responses
 
 ### 3. Module Internal Layering
-```
-Routes (HTTP) → Service (Business Logic) → Repository (Data Access)
-```
 - **Routes**: Zod schema validation, HTTP concerns, call service
 - **Service**: Pure business logic, returns Result types, emits events
 - **Repository**: Drizzle queries, data mapping
@@ -153,50 +76,33 @@ Routes (HTTP) → Service (Business Logic) → Repository (Data Access)
 
 ---
 
-## User Management Module Design
+## DB Schema
 
-### User Entity
-```typescript
-interface User {
-  id: string              // nanoid
-  email: string           // unique, indexed
-  emailVerified: boolean
-  passwordHash: string | null  // null for passkey-only users
-  displayName: string
-  status: 'active' | 'suspended' | 'pending_verification'
-  metadata: Record<string, unknown>  // JSONB
-  createdAt: Date
-  updatedAt: Date
-}
-```
+### users
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text PK | nanoid |
+| email | text | unique, indexed |
+| emailVerified | boolean | default false |
+| passwordHash | text | nullable (passkey-only users) |
+| displayName | text | |
+| status | text | 'active' / 'suspended' / 'pending_verification' |
+| metadata | jsonb | default {} |
+| createdAt | timestamp | |
+| updatedAt | timestamp | |
 
-### Service Interface
-```typescript
-interface UserService {
-  create(input: CreateUserInput): Promise<Result<User, UserAlreadyExistsError>>
-  findById(id: string): Promise<Result<User, UserNotFoundError>>
-  findByEmail(email: string): Promise<Result<User, UserNotFoundError>>
-  update(id: string, input: UpdateUserInput): Promise<Result<User, UserNotFoundError>>
-  delete(id: string): Promise<Result<void, UserNotFoundError>>
-  list(pagination: PaginationInput): Promise<Result<PaginatedResult<User>>>
-  updatePassword(id: string, hash: string): Promise<Result<void, UserNotFoundError>>
-  verifyEmail(id: string): Promise<Result<void, UserNotFoundError>>
-  suspend(id: string): Promise<Result<void, UserNotFoundError>>
-  activate(id: string): Promise<Result<void, UserNotFoundError>>
-}
-```
+---
+
+## User Module
+
+### Service Methods
+- `create`, `findById`, `findByEmail`, `update`, `delete`
+- `list` (paginated)
+- `updatePassword`, `verifyEmail`, `suspend`, `activate`
 
 ### Events
-```typescript
-type UserEvents = {
-  'user.created': { user: User }
-  'user.updated': { user: User; changes: Partial<User> }
-  'user.deleted': { userId: string }
-  'user.suspended': { userId: string }
-  'user.activated': { userId: string }
-  'user.email_verified': { userId: string }
-}
-```
+- `user.created`, `user.updated`, `user.deleted`
+- `user.suspended`, `user.activated`, `user.email_verified`
 
 ### API Routes
 | Method | Path | Description |
@@ -229,19 +135,15 @@ type UserEvents = {
 ---
 
 ## Environment Variables
-```env
-# Database
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/identity_starter
 
-# Redis
-REDIS_URL=redis://localhost:6379
-
-# Server
-PORT=3000
-HOST=0.0.0.0
-NODE_ENV=development
-LOG_LEVEL=debug
-```
+| Variable | Example | Purpose |
+|----------|---------|---------|
+| DATABASE_URL | `postgresql://postgres:postgres@localhost:5432/identity_starter` | PostgreSQL connection |
+| REDIS_URL | `redis://localhost:6379` | Redis connection |
+| PORT | `3000` | Server port |
+| HOST | `0.0.0.0` | Server host |
+| NODE_ENV | `development` | Environment |
+| LOG_LEVEL | `debug` | Pino log level |
 
 ---
 
@@ -258,8 +160,8 @@ LOG_LEVEL=debug
 
 ## Implementation Notes
 
-- Node.js requirement is `≥22` (per package.json engines field)
-- pnpm version pinned to `9.15.4`
+- Node.js requirement is `≥24` (per package.json engines field)
+- pnpm version pinned to `10.32.1`
 - Fastify 5.2, Drizzle 0.38, Vitest 3.0, Biome 1.9
 - Git hooks managed by lefthook 1.10
 - 4 commits completed for Phase 1 (scaffold → user module → enhancements → formatting)

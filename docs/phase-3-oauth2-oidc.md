@@ -11,15 +11,15 @@ Implement an OAuth 2.0 Authorization Server with OpenID Connect support. This is
 ## Scope
 
 ### New Modules
-- **Client module** (`apps/server/src/modules/client/`) — OAuth2 client registration and management (admin-created only)
-- **OAuth module** (`apps/server/src/modules/oauth/`) — Authorization server: authorization endpoint, token endpoint, authorization code flow
-- **Token module** (`apps/server/src/modules/token/`) — JWT issuance, refresh tokens, JWKS key management
+- **Client module** — OAuth2 client registration and management (admin-created only)
+- **OAuth module** — Authorization server: authorization endpoint, token endpoint, authorization code flow
+- **Token module** — JWT issuance, refresh tokens, JWKS key management
 
 ### New DB Tables
-- `oauth_clients` — Client registration (id, clientId, clientSecret, name, redirectUris, grantTypes, scopes, tokenEndpointAuthMethod, createdAt, updatedAt)
-- `authorization_codes` — Short-lived auth codes (code, clientId, userId, redirectUri, scopes, codeChallenge, codeChallengeMethod, expiresAt, createdAt)
-- `refresh_tokens` — Refresh token storage (id, token, clientId, userId, scopes, expiresAt, revokedAt, createdAt)
-- `consent_grants` — User consent records (id, userId, clientId, scopes, grantedAt, revokedAt)
+- `oauth_clients` — Client registration
+- `authorization_codes` — Short-lived auth codes
+- `refresh_tokens` — Refresh token storage
+- `consent_grants` — User consent records
 
 ### UI Additions (in `apps/web/`)
 - Consent page — shows requested scopes, allow/deny
@@ -39,7 +39,6 @@ Implement an OAuth 2.0 Authorization Server with OpenID Connect support. This is
 - **Token module** — Stateless JWT issuance (access tokens, ID tokens) and stateful refresh token management. Owns `refresh_tokens` table and JWKS key pair rotation.
 
 ### Why Separate Token Module?
-The token module is split from OAuth because:
 1. Token validation will be used by resource servers (not just the auth server)
 2. JWKS key management is a standalone concern (key rotation, multiple keys)
 3. Other phases (Admin API) need token introspection without pulling in OAuth flow logic
@@ -50,9 +49,7 @@ Supported:
 - `client_secret_post` — clientId and clientSecret in request body
 
 Not supported (keep scope manageable):
-- `private_key_jwt`
-- `client_secret_jwt`
-- `none` (public clients use PKCE instead)
+- `private_key_jwt`, `client_secret_jwt`, `none` (public clients use PKCE instead)
 
 ### PKCE Required for Authorization Code Flow
 - All authorization code grants require PKCE (RFC 7636)
@@ -89,68 +86,70 @@ Not supported (keep scope manageable):
 
 ---
 
-## Module File Structure
+## DB Schema
 
-### Client Module
-```
-apps/server/src/modules/client/
-├── client.schemas.ts       # Zod: createClient, updateClient, clientIdParam
-├── client.types.ts         # OAuthClient type, ClientAuthentication
-├── client.repository.ts    # DB CRUD for oauth_clients
-├── client.service.ts       # create(), findById(), findByClientId(), update(), delete(), rotateSecret(), validateRedirectUri()
-├── client.routes.ts        # CRUD routes (admin-only)
-├── client.events.ts        # ClientEvents type
-├── index.ts                # Public API barrel
-└── __tests__/
-    ├── client.service.test.ts
-    └── client.routes.test.ts
-```
+### oauth_clients
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text PK | nanoid (internal) |
+| clientId | text | unique, indexed — public client identifier |
+| clientSecretHash | text | hashed (never store plaintext) |
+| name | text | display name for consent screen |
+| description | text | nullable |
+| redirectUris | text[] | allowed redirect URIs (exact match) |
+| grantTypes | text[] | e.g., authorization_code, client_credentials, refresh_token |
+| scopes | text[] | allowed scopes for this client |
+| tokenEndpointAuthMethod | text | 'client_secret_basic' / 'client_secret_post' |
+| createdAt | timestamp | |
+| updatedAt | timestamp | |
 
-### OAuth Module
-```
-apps/server/src/modules/oauth/
-├── oauth.schemas.ts        # Zod: authorizeQuery, tokenRequest, consentInput
-├── oauth.types.ts          # AuthorizationRequest, TokenResponse, ConsentGrant
-├── oauth.repository.ts     # DB: authorization_codes, consent_grants
-├── oauth.service.ts        # authorize(), token(), consent(), revokeConsent()
-├── oauth.routes.ts         # GET /authorize, POST /token, POST /consent, GET /userinfo
-├── oauth.events.ts         # OAuthEvents type
-├── oauth.errors.ts         # OAuthError with error codes (invalid_request, unauthorized_client, etc.)
-├── index.ts                # Public API barrel
-└── __tests__/
-    ├── oauth.service.test.ts
-    ├── oauth.routes.test.ts
-    └── oauth.flows.test.ts  # End-to-end flow tests
-```
+### authorization_codes
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text PK | nanoid |
+| code | text | unique, indexed |
+| clientId | text FK | → oauth_clients.clientId |
+| userId | text FK | → users.id |
+| redirectUri | text | must match on token exchange |
+| scopes | text[] | granted scopes |
+| codeChallenge | text | PKCE code challenge |
+| codeChallengeMethod | text | 'S256' |
+| nonce | text | nullable — OIDC nonce |
+| expiresAt | timestamp | short TTL (10 minutes) |
+| usedAt | timestamp | nullable — mark as used to prevent replay |
+| createdAt | timestamp | |
 
-### Token Module
-```
-apps/server/src/modules/token/
-├── token.schemas.ts        # Zod: tokenRequest, introspectRequest
-├── token.types.ts          # AccessToken, IdToken, RefreshToken types
-├── token.repository.ts     # DB: refresh_tokens CRUD
-├── token.service.ts        # issueAccessToken(), issueIdToken(), issueRefreshToken(), verify(), revoke()
-├── token.jwks.ts           # JWKS key pair management (generate, rotate, serve)
-├── token.routes.ts         # /.well-known/jwks.json, /.well-known/openid-configuration
-├── token.events.ts         # TokenEvents type
-├── index.ts                # Public API barrel
-└── __tests__/
-    ├── token.service.test.ts
-    └── token.jwks.test.ts
-```
+### refresh_tokens
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text PK | nanoid |
+| token | text | unique, indexed — opaque token |
+| clientId | text FK | → oauth_clients.clientId |
+| userId | text FK | → users.id |
+| scopes | text[] | granted scopes |
+| expiresAt | timestamp | long TTL (30 days) |
+| revokedAt | timestamp | nullable — soft revoke |
+| createdAt | timestamp | |
 
-### DB Schema Additions
-```
-packages/db/src/schema/
-├── user.ts                 # (existing)
-├── session.ts              # (Phase 2)
-├── passkey.ts              # (Phase 2)
-├── oauth-client.ts         # oauth_clients table
-├── authorization-code.ts   # authorization_codes table
-├── refresh-token.ts        # refresh_tokens table
-├── consent-grant.ts        # consent_grants table
-└── index.ts                # Updated barrel export
-```
+### consent_grants
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text PK | nanoid |
+| userId | text FK | → users.id |
+| clientId | text FK | → oauth_clients.clientId |
+| scopes | text[] | consented scopes |
+| grantedAt | timestamp | |
+| revokedAt | timestamp | nullable — soft revoke |
+
+---
+
+## OpenID Connect Scopes
+
+| Scope | Claims Returned |
+|-------|----------------|
+| `openid` | sub |
+| `profile` | displayName |
+| `email` | email, emailVerified |
 
 ---
 
@@ -186,121 +185,23 @@ packages/db/src/schema/
 
 ## Events
 
-```typescript
-type ClientEvents = {
-  'client.created': { clientId: string }
-  'client.updated': { clientId: string }
-  'client.deleted': { clientId: string }
-  'client.secret_rotated': { clientId: string }
-}
+### Client Events
+- `client.created`, `client.updated`, `client.deleted`, `client.secret_rotated`
 
-type OAuthEvents = {
-  'oauth.authorization_code_issued': { clientId: string; userId: string; scopes: string[] }
-  'oauth.token_exchanged': { clientId: string; userId: string; grantType: string }
-  'oauth.consent_granted': { clientId: string; userId: string; scopes: string[] }
-  'oauth.consent_revoked': { clientId: string; userId: string }
-}
+### OAuth Events
+- `oauth.authorization_code_issued`, `oauth.token_exchanged`
+- `oauth.consent_granted`, `oauth.consent_revoked`
 
-type TokenEvents = {
-  'token.access_issued': { clientId: string; userId: string }
-  'token.refresh_issued': { clientId: string; userId: string }
-  'token.refresh_revoked': { clientId: string; tokenId: string }
-}
-```
-
----
-
-## DB Schema Design
-
-### oauth_clients
-```typescript
-{
-  id: string                    // nanoid (internal)
-  clientId: string              // unique, indexed — public client identifier
-  clientSecretHash: string      // hashed client secret (never store plaintext)
-  name: string                  // display name for consent screen
-  description: string | null    // client description
-  redirectUris: string[]        // allowed redirect URIs (exact match)
-  grantTypes: string[]          // ['authorization_code', 'client_credentials', 'refresh_token']
-  scopes: string[]              // allowed scopes for this client
-  tokenEndpointAuthMethod: string // 'client_secret_basic' | 'client_secret_post'
-  createdAt: Date
-  updatedAt: Date
-}
-```
-
-### authorization_codes
-```typescript
-{
-  id: string                    // nanoid
-  code: string                  // unique, indexed — the authorization code
-  clientId: string              // FK → oauth_clients.clientId
-  userId: string                // FK → users.id
-  redirectUri: string           // must match on token exchange
-  scopes: string[]              // granted scopes
-  codeChallenge: string         // PKCE code challenge
-  codeChallengeMethod: string   // 'S256'
-  nonce: string | null          // OIDC nonce
-  expiresAt: Date               // short TTL (10 minutes)
-  usedAt: Date | null           // mark as used to prevent replay
-  createdAt: Date
-}
-```
-
-### refresh_tokens
-```typescript
-{
-  id: string                    // nanoid
-  token: string                 // unique, indexed — opaque token
-  clientId: string              // FK → oauth_clients.clientId
-  userId: string                // FK → users.id
-  scopes: string[]              // granted scopes
-  expiresAt: Date               // long TTL (30 days)
-  revokedAt: Date | null        // soft revoke
-  createdAt: Date
-}
-```
-
-### consent_grants
-```typescript
-{
-  id: string                    // nanoid
-  userId: string                // FK → users.id
-  clientId: string              // FK → oauth_clients.clientId
-  scopes: string[]              // consented scopes
-  grantedAt: Date
-  revokedAt: Date | null        // soft revoke
-}
-```
-
----
-
-## OpenID Connect Scopes
-
-| Scope | Claims Returned |
-|-------|----------------|
-| `openid` | sub |
-| `profile` | displayName |
-| `email` | email, emailVerified |
+### Token Events
+- `token.access_issued`, `token.refresh_issued`, `token.refresh_revoked`
 
 ---
 
 ## Cross-Module Dependencies
 
-```
-Client module
-  └── standalone (no module dependencies)
-
-OAuth module
-  ├── depends on: Client module (validate client, redirect URIs)
-  ├── depends on: Token module (issue tokens)
-  ├── depends on: User module (get user for ID token claims)
-  └── depends on: Session module (validate user session during authorize)
-
-Token module
-  ├── depends on: packages/db (refresh_tokens table)
-  └── depends on: jose (JWT signing/verification)
-```
+- **Client module** → standalone (no module dependencies)
+- **OAuth module** → Client module, Token module, User module, Session module
+- **Token module** → packages/db (refresh_tokens table), jose (JWT signing/verification)
 
 ---
 

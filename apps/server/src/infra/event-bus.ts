@@ -1,5 +1,5 @@
 import mitt from 'mitt';
-import { nanoid } from 'nanoid';
+import { v7 as uuidv7 } from 'uuid';
 
 export interface DomainEvent<T = unknown> {
   readonly id: string;
@@ -17,7 +17,7 @@ export interface EventBus {
 }
 
 export function createDomainEvent<T>(eventName: string, payload: T): DomainEvent<T> {
-  return { id: nanoid(), eventName, occurredOn: new Date(), payload };
+  return { id: uuidv7(), eventName, occurredOn: new Date(), payload };
 }
 
 export class InMemoryEventBus implements EventBus {

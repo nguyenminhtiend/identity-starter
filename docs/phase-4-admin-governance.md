@@ -11,19 +11,19 @@ Add administrative capabilities, role-based access control, audit logging, and a
 ## Scope
 
 ### New Modules
-- **RBAC module** (`apps/server/src/modules/rbac/`) — Roles, permissions, role assignments
-- **Audit module** (`apps/server/src/modules/audit/`) — Audit log capture and querying
-- **Admin module** (`apps/server/src/modules/admin/`) — Admin API endpoints (aggregates other modules)
+- **RBAC module** — Roles, permissions, role assignments
+- **Audit module** — Audit log capture and querying
+- **Admin module** — Admin API endpoints (aggregates other modules)
 
 ### New App
 - **Admin dashboard** (`apps/admin/`) — Separate Next.js admin UI
 
 ### New DB Tables
-- `roles` — Role definitions (id, name, description, isSystem, createdAt, updatedAt)
-- `permissions` — Permission definitions (id, resource, action, description, createdAt)
+- `roles` — Role definitions
+- `permissions` — Permission definitions
 - `role_permissions` — Many-to-many: roles ↔ permissions
 - `user_roles` — Many-to-many: users ↔ roles
-- `audit_logs` — Append-only audit trail (id, actorId, actorType, action, resource, resourceId, metadata, ipAddress, timestamp)
+- `audit_logs` — Append-only audit trail
 
 ---
 
@@ -70,14 +70,8 @@ Add administrative capabilities, role-based access control, audit logging, and a
 - Users can have multiple roles — permissions are unioned
 
 ### Audit Logging
-- Automatic capture from event bus:
-  - `user.*` events → audit entries
-  - `auth.*` events → audit entries (login, logout, failed login, password change)
-  - `session.*` events → audit entries
-  - `client.*` events → audit entries
-  - `oauth.*` events → audit entries
-  - `rbac.*` events → audit entries (role assignments, permission changes)
-- Structured log entries: `{ actorId, actorType, action, resource, resourceId, metadata, ipAddress, timestamp }`
+- Automatic capture from event bus (user, auth, session, client, oauth, rbac events)
+- Structured log entries: actorId, actorType, action, resource, resourceId, metadata, ipAddress, timestamp
 - Query API with filtering: by actorId, action, resource, date range, with pagination
 - Append-only — repository exposes only `create()` and `find*()`
 
@@ -100,72 +94,60 @@ Add administrative capabilities, role-based access control, audit logging, and a
 
 ---
 
-## Module File Structure
+## DB Schema
 
-### RBAC Module
-```
-apps/server/src/modules/rbac/
-├── rbac.schemas.ts         # Zod: createRole, createPermission, assignRole
-├── rbac.types.ts           # Role, Permission, UserRole types
-├── rbac.repository.ts      # DB CRUD for roles, permissions, role_permissions, user_roles
-├── rbac.service.ts         # createRole(), assignRole(), checkPermission(), getUserPermissions()
-├── rbac.middleware.ts      # requirePermission() Fastify hook
-├── rbac.routes.ts          # CRUD routes for roles/permissions
-├── rbac.seed.ts            # Seed built-in roles and permissions
-├── rbac.events.ts          # RbacEvents type
-├── index.ts                # Public API barrel
-└── __tests__/
-    ├── rbac.service.test.ts
-    ├── rbac.middleware.test.ts
-    └── rbac.routes.test.ts
-```
+### roles
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text PK | nanoid |
+| name | text | unique — e.g., 'admin', 'user' |
+| description | text | nullable |
+| isSystem | boolean | true for built-in roles (cannot be deleted) |
+| createdAt | timestamp | |
+| updatedAt | timestamp | |
 
-### Audit Module
-```
-apps/server/src/modules/audit/
-├── audit.schemas.ts        # Zod: auditQuery (filters, pagination)
-├── audit.types.ts          # AuditEntry type
-├── audit.repository.ts     # Append-only: create(), findByQuery()
-├── audit.service.ts        # log(), query() — subscribes to event bus
-├── audit.subscriber.ts     # Event bus subscriptions, maps events → audit entries
-├── audit.routes.ts         # GET /audit-logs (admin-only)
-├── audit.events.ts         # AuditEvents type (if needed)
-├── index.ts                # Public API barrel
-└── __tests__/
-    ├── audit.service.test.ts
-    ├── audit.subscriber.test.ts
-    └── audit.routes.test.ts
-```
+### permissions
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text PK | nanoid |
+| resource | text | e.g., 'users', 'clients', 'audit' |
+| action | text | e.g., 'read', 'write', 'delete' |
+| description | text | nullable |
+| createdAt | timestamp | |
 
-### Admin Module
-```
-apps/server/src/modules/admin/
-├── admin.schemas.ts        # Zod: admin search/filter schemas
-├── admin.types.ts          # Admin-specific aggregate types (UserDetail, SystemStats)
-├── admin.service.ts        # Aggregates other module services
-├── admin.routes.ts         # Admin-only routes
-├── index.ts                # Public API barrel
-└── __tests__/
-    └── admin.routes.test.ts
-```
+Unique constraint on (resource, action).
 
-### DB Schema Additions
-```
-packages/db/src/schema/
-├── user.ts                 # (existing)
-├── session.ts              # (Phase 2)
-├── passkey.ts              # (Phase 2)
-├── oauth-client.ts         # (Phase 3)
-├── authorization-code.ts   # (Phase 3)
-├── refresh-token.ts        # (Phase 3)
-├── consent-grant.ts        # (Phase 3)
-├── role.ts                 # roles table
-├── permission.ts           # permissions table
-├── role-permission.ts      # role_permissions join table
-├── user-role.ts            # user_roles join table
-├── audit-log.ts            # audit_logs append-only table
-└── index.ts                # Updated barrel export
-```
+### role_permissions
+| Column | Type | Notes |
+|--------|------|-------|
+| roleId | text FK | → roles.id |
+| permissionId | text FK | → permissions.id |
+
+Composite PK: (roleId, permissionId).
+
+### user_roles
+| Column | Type | Notes |
+|--------|------|-------|
+| userId | text FK | → users.id |
+| roleId | text FK | → roles.id |
+| assignedAt | timestamp | |
+
+Composite PK: (userId, roleId).
+
+### audit_logs
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text PK | nanoid |
+| actorId | text | nullable — null for system actions (no FK, intentional) |
+| actorType | text | 'user' / 'system' / 'client' |
+| action | text | e.g., 'user.created', 'auth.login' |
+| resource | text | e.g., 'user', 'session', 'client' |
+| resourceId | text | nullable — ID of affected resource |
+| metadata | jsonb | additional context |
+| ipAddress | text | nullable |
+| timestamp | timestamp | indexed |
+
+Indexes: timestamp, actorId, action, resource.
 
 ---
 
@@ -202,120 +184,29 @@ packages/db/src/schema/
 
 ## Events
 
-```typescript
-type RbacEvents = {
-  'rbac.role_created': { roleId: string; name: string }
-  'rbac.role_updated': { roleId: string }
-  'rbac.role_deleted': { roleId: string }
-  'rbac.role_assigned': { userId: string; roleId: string }
-  'rbac.role_revoked': { userId: string; roleId: string }
-  'rbac.permission_created': { permissionId: string; resource: string; action: string }
-}
+### RBAC Events
+- `rbac.role_created`, `rbac.role_updated`, `rbac.role_deleted`
+- `rbac.role_assigned`, `rbac.role_revoked`
+- `rbac.permission_created`
 
-type AuditEvents = {
-  'audit.entry_created': { entryId: string; action: string }
-}
-```
-
----
-
-## DB Schema Design
-
-### roles
-```typescript
-{
-  id: string              // nanoid
-  name: string            // unique — e.g., 'admin', 'user'
-  description: string | null
-  isSystem: boolean       // true for built-in roles (cannot be deleted)
-  createdAt: Date
-  updatedAt: Date
-}
-```
-
-### permissions
-```typescript
-{
-  id: string              // nanoid
-  resource: string        // e.g., 'users', 'clients', 'audit'
-  action: string          // e.g., 'read', 'write', 'delete'
-  description: string | null
-  createdAt: Date
-}
-// unique constraint on (resource, action)
-```
-
-### role_permissions
-```typescript
-{
-  roleId: string          // FK → roles.id
-  permissionId: string    // FK → permissions.id
-  // composite PK: (roleId, permissionId)
-}
-```
-
-### user_roles
-```typescript
-{
-  userId: string          // FK → users.id
-  roleId: string          // FK → roles.id
-  assignedAt: Date
-  // composite PK: (userId, roleId)
-}
-```
-
-### audit_logs
-```typescript
-{
-  id: string              // nanoid
-  actorId: string | null  // who performed the action (null for system actions)
-  actorType: string       // 'user' | 'system' | 'client'
-  action: string          // e.g., 'user.created', 'auth.login', 'rbac.role_assigned'
-  resource: string        // e.g., 'user', 'session', 'client'
-  resourceId: string | null // ID of the affected resource
-  metadata: Record<string, unknown>  // JSONB — additional context
-  ipAddress: string | null
-  timestamp: Date         // indexed
-}
-// Indexes: timestamp, actorId, action, resource
-```
+### Audit Events
+- `audit.entry_created`
 
 ---
 
 ## Cross-Module Dependencies
 
-```
-RBAC module
-  └── depends on: User module (user existence check for role assignment)
-
-Audit module
-  └── depends on: Event bus (subscribes to all module events)
-  └── standalone for data — no module dependencies
-
-Admin module
-  ├── depends on: User module (user search, detail)
-  ├── depends on: Session module (list/revoke sessions)
-  ├── depends on: Passkey module (list user passkeys)
-  ├── depends on: Client module (client management)
-  ├── depends on: RBAC module (role management, permission checks)
-  └── depends on: Audit module (audit log queries)
-```
+- **RBAC module** → User module (user existence check for role assignment)
+- **Audit module** → Event bus (subscribes to all module events); standalone for data
+- **Admin module** → User, Session, Passkey, Client, RBAC, Audit modules
 
 ---
 
 ## Seeding / Bootstrap
 
 On first run (or via a seed script):
-1. Create built-in permissions:
-   - `users:read`, `users:write`, `users:delete`
-   - `clients:read`, `clients:write`, `clients:delete`
-   - `sessions:read`, `sessions:revoke`
-   - `roles:read`, `roles:write`, `roles:delete`
-   - `audit:read`, `audit:export`
-2. Create built-in roles:
-   - `super_admin` — all permissions
-   - `admin` — all except `roles:delete`
-   - `user` — no admin permissions (self-service only via Phase 2 routes)
+1. Create built-in permissions: `users:read/write/delete`, `clients:read/write/delete`, `sessions:read/revoke`, `roles:read/write/delete`, `audit:read/export`
+2. Create built-in roles: `super_admin` (all), `admin` (all except `roles:delete`), `user` (self-service only)
 3. Assign `super_admin` to the first created user (or via env var `ADMIN_EMAIL`)
 
 ---

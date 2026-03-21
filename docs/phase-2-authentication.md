@@ -11,16 +11,16 @@ Build the authentication layer on top of Phase 1's User module. This phase adds 
 ## Scope
 
 ### New Modules
-- **Auth module** (`apps/server/src/modules/auth/`) — Password verification, session creation/validation, login/logout flows
-- **Session module** (`apps/server/src/modules/session/`) — Session storage, validation middleware, revocation
-- **Passkey module** (`apps/server/src/modules/passkey/`) — WebAuthn registration + authentication
+- **Auth module** — Password verification, session creation/validation, login/logout flows
+- **Session module** — Session storage, validation middleware, revocation
+- **Passkey module** — WebAuthn registration + authentication
 
 ### New App
 - **Web UI** (`apps/web/`) — Next.js 15 with shadcn/ui + Tailwind CSS v4
 
 ### New DB Tables
-- `sessions` — Session storage (id, token, userId, expiresAt, ipAddress, userAgent, createdAt)
-- `passkeys` — WebAuthn credential storage (id, userId, credentialId, publicKey, counter, deviceType, backedUp, transports, name, createdAt)
+- `sessions` — Session storage
+- `passkeys` — WebAuthn credential storage
 
 ### Key Libraries
 - `@node-rs/argon2` — Password hashing (already a dependency)
@@ -48,7 +48,7 @@ Build the authentication layer on top of Phase 1's User module. This phase adds 
 ### Password Reset — Deferred
 - Password reset requires an email delivery service (SMTP or transactional email provider)
 - Deferred to a later phase or added as an enhancement after Phase 2 core is complete
-- The auth module API surface is designed to accommodate it later (`POST /api/auth/reset-password/request`, `POST /api/auth/reset-password/confirm`)
+- The auth module API surface is designed to accommodate it later
 
 ---
 
@@ -82,63 +82,32 @@ Build the authentication layer on top of Phase 1's User module. This phase adds 
 
 ---
 
-## Module File Structure
+## DB Schema
 
-### Auth Module
-```
-apps/server/src/modules/auth/
-├── auth.schemas.ts         # Zod: registerInput, loginInput, changePasswordInput
-├── auth.types.ts           # TypeScript types derived from schemas
-├── auth.service.ts         # register(), login(), logout(), changePassword()
-├── auth.routes.ts          # POST /register, /login, /logout, /change-password
-├── auth.events.ts          # AuthEvents type
-├── auth.errors.ts          # InvalidCredentialsError, AccountSuspendedError
-├── index.ts                # Public API barrel
-└── __tests__/
-    ├── auth.service.test.ts
-    └── auth.routes.test.ts
-```
+### sessions
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text PK | nanoid |
+| token | text | unique, indexed — opaque session token |
+| userId | text FK | → users.id |
+| expiresAt | timestamp | session expiry |
+| ipAddress | text | nullable |
+| userAgent | text | nullable |
+| createdAt | timestamp | |
 
-### Session Module
-```
-apps/server/src/modules/session/
-├── session.schemas.ts      # Zod: sessionId param
-├── session.types.ts        # Session type, SessionWithUser
-├── session.repository.ts   # DB CRUD for sessions table
-├── session.service.ts      # create(), validate(), revoke(), listByUser()
-├── session.cache.ts        # Redis get/set/delete for session cache
-├── session.middleware.ts   # Fastify onRequest hook for session validation
-├── session.routes.ts       # GET /sessions, DELETE /sessions/:id
-├── session.events.ts       # SessionEvents type
-├── index.ts                # Public API barrel
-└── __tests__/
-    ├── session.service.test.ts
-    └── session.middleware.test.ts
-```
-
-### Passkey Module
-```
-apps/server/src/modules/passkey/
-├── passkey.schemas.ts      # Zod: registration/auth options and verification
-├── passkey.types.ts        # Passkey type
-├── passkey.repository.ts   # DB CRUD for passkeys table
-├── passkey.service.ts      # registerOptions(), registerVerify(), authOptions(), authVerify()
-├── passkey.routes.ts       # POST register/options, register/verify, auth/options, auth/verify; GET list; DELETE :id
-├── passkey.events.ts       # PasskeyEvents type
-├── index.ts                # Public API barrel
-└── __tests__/
-    ├── passkey.service.test.ts
-    └── passkey.routes.test.ts
-```
-
-### DB Schema Additions
-```
-packages/db/src/schema/
-├── user.ts                 # (existing)
-├── session.ts              # sessions table
-├── passkey.ts              # passkeys table
-└── index.ts                # Updated barrel export
-```
+### passkeys
+| Column | Type | Notes |
+|--------|------|-------|
+| id | text PK | nanoid |
+| userId | text FK | → users.id |
+| credentialId | text | unique, indexed — WebAuthn credential ID (base64url) |
+| publicKey | bytea | COSE public key |
+| counter | integer | signature counter for clone detection |
+| deviceType | text | 'singleDevice' / 'multiDevice' |
+| backedUp | boolean | whether credential is backed up |
+| transports | text[] | e.g., ['usb', 'ble', 'nfc', 'internal'] |
+| name | text | user-assigned name for the passkey |
+| createdAt | timestamp | |
 
 ---
 
@@ -172,76 +141,23 @@ packages/db/src/schema/
 
 ## Events
 
-```typescript
-type AuthEvents = {
-  'auth.registered': { userId: string }
-  'auth.login': { userId: string; method: 'password' | 'passkey'; sessionId: string }
-  'auth.logout': { userId: string; sessionId: string }
-  'auth.password_changed': { userId: string }
-  'auth.failed_login': { email: string; reason: string }
-}
+### Auth Events
+- `auth.registered`, `auth.login`, `auth.logout`
+- `auth.password_changed`, `auth.failed_login`
 
-type SessionEvents = {
-  'session.created': { sessionId: string; userId: string }
-  'session.revoked': { sessionId: string; userId: string }
-}
+### Session Events
+- `session.created`, `session.revoked`
 
-type PasskeyEvents = {
-  'passkey.registered': { userId: string; credentialId: string }
-  'passkey.deleted': { userId: string; credentialId: string }
-}
-```
-
----
-
-## DB Schema Design
-
-### sessions
-```typescript
-{
-  id: string              // nanoid
-  token: string           // unique, indexed — opaque session token
-  userId: string          // FK → users.id
-  expiresAt: Date         // session expiry
-  ipAddress: string | null
-  userAgent: string | null
-  createdAt: Date
-}
-```
-
-### passkeys
-```typescript
-{
-  id: string              // nanoid
-  userId: string          // FK → users.id
-  credentialId: string    // unique, indexed — WebAuthn credential ID (base64url)
-  publicKey: Buffer       // COSE public key
-  counter: number         // signature counter for clone detection
-  deviceType: string      // 'singleDevice' | 'multiDevice'
-  backedUp: boolean       // whether credential is backed up
-  transports: string[]    // e.g., ['usb', 'ble', 'nfc', 'internal']
-  name: string            // user-assigned name for the passkey
-  createdAt: Date
-}
-```
+### Passkey Events
+- `passkey.registered`, `passkey.deleted`
 
 ---
 
 ## Cross-Module Dependencies
 
-```
-Auth module
-  ├── depends on: User module (findByEmail, updatePassword)
-  └── depends on: Session module (create, revoke)
-
-Session module
-  ├── depends on: packages/db (sessions table)
-  └── depends on: packages/redis (session cache)
-
-Passkey module
-  ├── depends on: User module (findById)
-  └── depends on: Session module (create — for passkey login)
-```
+- **Auth module** → User module (findByEmail, updatePassword), Session module (create, revoke)
+- **Session module** → packages/db (sessions table), packages/redis (session cache)
+- **Passkey module** → User module (findById), Session module (create — for passkey login)
 
 ---
 
