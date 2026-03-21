@@ -1,11 +1,10 @@
 import type { Database } from '@identity-starter/db';
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
-import mitt from 'mitt';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Container } from '../../../core/container.js';
 import type { Env } from '../../../core/env.js';
-import type { AllEvents } from '../../../infra/events.js';
+import { InMemoryEventBus } from '../../../infra/event-bus.js';
 import type { UserRepository } from '../user.repository.js';
 import { userRoutes } from '../user.routes.js';
 import { UserService } from '../user.service.js';
@@ -69,7 +68,7 @@ async function buildTestApp() {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
-  const eventBus = mitt<AllEvents>();
+  const eventBus = new InMemoryEventBus();
   const fakeContainer: Container = {
     db: {} as Database,
     env: {} as Env,

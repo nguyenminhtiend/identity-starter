@@ -1,6 +1,7 @@
-import mitt from 'mitt';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { UserEvents } from '../user.events.js';
+import type { DomainEvent } from '../../../infra/event-bus.js';
+import { InMemoryEventBus } from '../../../infra/event-bus.js';
+import { USER_EVENTS } from '../user.events.js';
 import type { UserRepository } from '../user.repository.js';
 import { UserService } from '../user.service.js';
 import type { User } from '../user.types.js';
@@ -33,25 +34,32 @@ function createMockRepo(): {
   };
 }
 
+function collectEvents(eventBus: InMemoryEventBus, eventName: string): DomainEvent[] {
+  const collected: DomainEvent[] = [];
+  eventBus.subscribe(eventName, (e) => {
+    collected.push(e);
+  });
+  return collected;
+}
+
 describe('UserService', () => {
   let service: UserService;
   let repo: ReturnType<typeof createMockRepo>;
-  let eventBus: ReturnType<typeof mitt<UserEvents>>;
+  let eventBus: InMemoryEventBus;
 
   beforeEach(() => {
     repo = createMockRepo();
-    eventBus = mitt<UserEvents>();
+    eventBus = new InMemoryEventBus();
     service = new UserService(repo as unknown as UserRepository, eventBus);
   });
 
   describe('create', () => {
-    it('should create a user and emit event', async () => {
+    it('should create a user and publish event', async () => {
       const user = makeUser();
       repo.findByEmail.mockResolvedValue(null);
       repo.create.mockResolvedValue(user);
 
-      const emitted: UserEvents['user.created'][] = [];
-      eventBus.on('user.created', (e) => emitted.push(e));
+      const emitted = collectEvents(eventBus, USER_EVENTS.CREATED);
 
       const result = await service.create({
         email: 'test@example.com',
@@ -64,6 +72,7 @@ describe('UserService', () => {
         expect(result.value.email).toBe('test@example.com');
       }
       expect(emitted).toHaveLength(1);
+      expect(emitted[0].eventName).toBe(USER_EVENTS.CREATED);
     });
 
     it('should return error if email already exists', async () => {
@@ -107,17 +116,17 @@ describe('UserService', () => {
   });
 
   describe('update', () => {
-    it('should update user and emit event', async () => {
+    it('should update user and publish event', async () => {
       const updated = makeUser({ displayName: 'Updated' });
       repo.update.mockResolvedValue(updated);
 
-      const emitted: UserEvents['user.updated'][] = [];
-      eventBus.on('user.updated', (e) => emitted.push(e));
+      const emitted = collectEvents(eventBus, USER_EVENTS.UPDATED);
 
       const result = await service.update('test-id', { displayName: 'Updated' });
 
       expect(result.ok).toBe(true);
       expect(emitted).toHaveLength(1);
+      expect(emitted[0].eventName).toBe(USER_EVENTS.UPDATED);
     });
 
     it('should return error if email conflicts', async () => {
@@ -133,16 +142,16 @@ describe('UserService', () => {
   });
 
   describe('delete', () => {
-    it('should delete user and emit event', async () => {
+    it('should delete user and publish event', async () => {
       repo.delete.mockResolvedValue(true);
 
-      const emitted: UserEvents['user.deleted'][] = [];
-      eventBus.on('user.deleted', (e) => emitted.push(e));
+      const emitted = collectEvents(eventBus, USER_EVENTS.DELETED);
 
       const result = await service.delete('test-id');
 
       expect(result.ok).toBe(true);
       expect(emitted).toHaveLength(1);
+      expect(emitted[0].eventName).toBe(USER_EVENTS.DELETED);
     });
 
     it('should return error when not found', async () => {
@@ -169,44 +178,44 @@ describe('UserService', () => {
   });
 
   describe('suspend', () => {
-    it('should suspend user and emit event', async () => {
+    it('should suspend user and publish event', async () => {
       repo.update.mockResolvedValue(makeUser({ status: 'suspended' }));
 
-      const emitted: UserEvents['user.suspended'][] = [];
-      eventBus.on('user.suspended', (e) => emitted.push(e));
+      const emitted = collectEvents(eventBus, USER_EVENTS.SUSPENDED);
 
       const result = await service.suspend('test-id');
 
       expect(result.ok).toBe(true);
       expect(emitted).toHaveLength(1);
+      expect(emitted[0].eventName).toBe(USER_EVENTS.SUSPENDED);
     });
   });
 
   describe('activate', () => {
-    it('should activate user and emit event', async () => {
+    it('should activate user and publish event', async () => {
       repo.update.mockResolvedValue(makeUser({ status: 'active' }));
 
-      const emitted: UserEvents['user.activated'][] = [];
-      eventBus.on('user.activated', (e) => emitted.push(e));
+      const emitted = collectEvents(eventBus, USER_EVENTS.ACTIVATED);
 
       const result = await service.activate('test-id');
 
       expect(result.ok).toBe(true);
       expect(emitted).toHaveLength(1);
+      expect(emitted[0].eventName).toBe(USER_EVENTS.ACTIVATED);
     });
   });
 
   describe('verifyEmail', () => {
-    it('should verify email and emit event', async () => {
+    it('should verify email and publish event', async () => {
       repo.update.mockResolvedValue(makeUser({ emailVerified: true }));
 
-      const emitted: UserEvents['user.email_verified'][] = [];
-      eventBus.on('user.email_verified', (e) => emitted.push(e));
+      const emitted = collectEvents(eventBus, USER_EVENTS.EMAIL_VERIFIED);
 
       const result = await service.verifyEmail('test-id');
 
       expect(result.ok).toBe(true);
       expect(emitted).toHaveLength(1);
+      expect(emitted[0].eventName).toBe(USER_EVENTS.EMAIL_VERIFIED);
     });
   });
 });

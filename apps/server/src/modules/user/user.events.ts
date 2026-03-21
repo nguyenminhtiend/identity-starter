@@ -1,10 +1,35 @@
 import type { User } from './user.types.js';
 
-export type UserEvents = {
-  'user.created': { user: User };
-  'user.updated': { user: User; changes: Partial<User> };
-  'user.deleted': { userId: string };
-  'user.suspended': { userId: string };
-  'user.activated': { userId: string };
-  'user.email_verified': { userId: string };
-};
+export const USER_EVENTS = {
+  CREATED: 'user.created',
+  UPDATED: 'user.updated',
+  DELETED: 'user.deleted',
+  SUSPENDED: 'user.suspended',
+  ACTIVATED: 'user.activated',
+  EMAIL_VERIFIED: 'user.email_verified',
+} as const;
+
+export interface UserCreatedPayload {
+  user: User;
+}
+
+export interface UserUpdatedPayload {
+  user: User;
+  changes: Partial<User>;
+}
+
+export interface UserDeletedPayload {
+  userId: string;
+}
+
+export interface UserSuspendedPayload {
+  userId: string;
+}
+
+export interface UserActivatedPayload {
+  userId: string;
+}
+
+export interface UserEmailVerifiedPayload {
+  userId: string;
+}

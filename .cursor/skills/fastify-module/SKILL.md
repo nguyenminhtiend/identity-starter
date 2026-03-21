@@ -279,11 +279,3 @@ If a schema is shared across API + server apps, define it in `@collab/types` and
 import { DocumentSchema, CreateDocumentSchema } from '@collab/types';
 export { DocumentSchema, CreateDocumentSchema };
 ```
-
-## Don'ts
-
-- **Don't import Hono** — this project uses Fastify
-- **Don't create a `new Hono()` inside routes** — export a `FastifyPluginAsync` instead
-- **Don't inject `container` as a function param to routes** — use `fastify.container` from the decorated instance
-- **Don't put framework logic in service files** — services are pure business logic with `db` as first param
-- **Don't forget to register the module in `app.ts`** — unregistered plugins are dead code

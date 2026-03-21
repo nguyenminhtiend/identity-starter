@@ -1,15 +1,15 @@
 import type { PaginatedResult, PaginationInput } from '@identity-starter/core';
 import { ConflictError, err, NotFoundError, ok, type Result } from '@identity-starter/core';
-import type { Emitter } from 'mitt';
 import { nanoid } from 'nanoid';
-import type { UserEvents } from './user.events.js';
+import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
+import { USER_EVENTS } from './user.events.js';
 import type { UserRepository } from './user.repository.js';
 import type { CreateUserInput, UpdateUserInput, User } from './user.types.js';
 
 export class UserService {
   constructor(
     private repo: UserRepository,
-    private eventBus: Emitter<UserEvents>,
+    private eventBus: EventBus,
   ) {}
 
   async create(input: CreateUserInput): Promise<Result<User, ConflictError>> {
@@ -19,7 +19,7 @@ export class UserService {
     }
 
     const user = await this.repo.create(nanoid(), input);
-    this.eventBus.emit('user.created', { user });
+    await this.eventBus.publish(createDomainEvent(USER_EVENTS.CREATED, { user }));
     return ok(user);
   }
 
@@ -55,7 +55,7 @@ export class UserService {
       return err(new NotFoundError('User', id));
     }
 
-    this.eventBus.emit('user.updated', { user, changes: input });
+    await this.eventBus.publish(createDomainEvent(USER_EVENTS.UPDATED, { user, changes: input }));
     return ok(user);
   }
 
@@ -64,7 +64,7 @@ export class UserService {
     if (!deleted) {
       return err(new NotFoundError('User', id));
     }
-    this.eventBus.emit('user.deleted', { userId: id });
+    await this.eventBus.publish(createDomainEvent(USER_EVENTS.DELETED, { userId: id }));
     return ok(undefined);
   }
 
@@ -92,7 +92,7 @@ export class UserService {
     if (!user) {
       return err(new NotFoundError('User', id));
     }
-    this.eventBus.emit('user.email_verified', { userId: id });
+    await this.eventBus.publish(createDomainEvent(USER_EVENTS.EMAIL_VERIFIED, { userId: id }));
     return ok(undefined);
   }
 
@@ -101,7 +101,7 @@ export class UserService {
     if (!user) {
       return err(new NotFoundError('User', id));
     }
-    this.eventBus.emit('user.suspended', { userId: id });
+    await this.eventBus.publish(createDomainEvent(USER_EVENTS.SUSPENDED, { userId: id }));
     return ok(undefined);
   }
 
@@ -110,7 +110,7 @@ export class UserService {
     if (!user) {
       return err(new NotFoundError('User', id));
     }
-    this.eventBus.emit('user.activated', { userId: id });
+    await this.eventBus.publish(createDomainEvent(USER_EVENTS.ACTIVATED, { userId: id }));
     return ok(undefined);
   }
 }
