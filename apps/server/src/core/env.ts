@@ -5,8 +5,12 @@ const EnvSchema = z.object({
   PORT: z.coerce.number().default(3000),
   HOST: z.string().default('0.0.0.0'),
   DATABASE_URL: z.url(),
-  REDIS_URL: z.url(),
+  REDIS_URL: z.url().optional(),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
+  WEBAUTHN_RP_NAME: z.string().default('Identity Starter'),
+  WEBAUTHN_RP_ID: z.string().default('localhost'),
+  WEBAUTHN_ORIGIN: z.url().default('http://localhost:3000'),
+  SESSION_TTL_SECONDS: z.coerce.number().default(604800),
 });
 
 export const env = EnvSchema.parse(process.env);

@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Container } from '../../../core/container.js';
 import { errorHandlerPlugin } from '../../../core/plugins/error-handler.js';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
 import { makeUser } from './user.factory.js';
@@ -27,7 +28,7 @@ describe('user routes', () => {
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
 
-    app.decorate('container', { db: {} });
+    app.decorate('container', { db: {} as unknown as Container['db'] });
     app.decorate('eventBus', new InMemoryEventBus());
 
     await app.register(errorHandlerPlugin);
