@@ -1,5 +1,5 @@
 {
-  "id": "40ce0ded-041c-4e60-b8ad-d003962f0e1d",
+  "id": "54d95642-efa1-4f14-ad21-e4416b63f443",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -10,9 +10,10 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "text",
+          "type": "uuid",
           "primaryKey": true,
-          "notNull": true
+          "notNull": true,
+          "default": "uuidv7()"
         },
         "email": {
           "name": "email",

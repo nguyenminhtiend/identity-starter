@@ -1,5 +1,5 @@
 CREATE TABLE "users" (
-	"id" text PRIMARY KEY NOT NULL,
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
 	"email" text NOT NULL,
 	"email_verified" boolean DEFAULT false NOT NULL,
 	"password_hash" text,

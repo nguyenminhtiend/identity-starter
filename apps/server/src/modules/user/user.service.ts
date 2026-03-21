@@ -2,7 +2,6 @@ import { ConflictError, err, NotFoundError, ok, type Result } from '@identity-st
 import type { Database } from '@identity-starter/db';
 import { users } from '@identity-starter/db';
 import { eq } from 'drizzle-orm';
-import { v7 as uuidv7 } from 'uuid';
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import { USER_EVENTS } from './user.events.js';
 import type { CreateUserInput, User } from './user.schemas.js';
@@ -28,54 +27,50 @@ export function stripPasswordHash(user: User) {
   return rest;
 }
 
-export interface UserService {
-  create(input: CreateUserInput): Promise<Result<User, ConflictError>>;
-  findById(id: string): Promise<Result<User, NotFoundError>>;
-  findByEmail(email: string): Promise<Result<User, NotFoundError>>;
-}
-
-export function createUserService(db: Database, eventBus: EventBus): UserService {
-  async function findByEmailRow(email: string) {
-    const [row] = await db.select().from(users).where(eq(users.email, email)).limit(1);
-    return row ?? null;
+export async function createUser(
+  db: Database,
+  eventBus: EventBus,
+  input: CreateUserInput,
+): Promise<Result<User, ConflictError>> {
+  const existing = await findByEmailRow(db, input.email);
+  if (existing) {
+    return err(new ConflictError('User', 'email', input.email));
   }
 
-  return {
-    async create(input) {
-      const existing = await findByEmailRow(input.email);
-      if (existing) {
-        return err(new ConflictError('User', 'email', input.email));
-      }
+  const [row] = await db
+    .insert(users)
+    .values({
+      email: input.email,
+      displayName: input.displayName,
+      passwordHash: input.passwordHash ?? null,
+      metadata: input.metadata ?? {},
+    })
+    .returning();
+  const user = mapToUser(row);
+  await eventBus.publish(createDomainEvent(USER_EVENTS.CREATED, { user }));
+  return ok(user);
+}
 
-      const [row] = await db
-        .insert(users)
-        .values({
-          id: uuidv7(),
-          email: input.email,
-          displayName: input.displayName,
-          passwordHash: input.passwordHash ?? null,
-          metadata: input.metadata ?? {},
-        })
-        .returning();
-      const user = mapToUser(row);
-      await eventBus.publish(createDomainEvent(USER_EVENTS.CREATED, { user }));
-      return ok(user);
-    },
+export async function findUserById(db: Database, id: string): Promise<Result<User, NotFoundError>> {
+  const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  if (!row) {
+    return err(new NotFoundError('User', id));
+  }
+  return ok(mapToUser(row));
+}
 
-    async findById(id) {
-      const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
-      if (!row) {
-        return err(new NotFoundError('User', id));
-      }
-      return ok(mapToUser(row));
-    },
+export async function findUserByEmail(
+  db: Database,
+  email: string,
+): Promise<Result<User, NotFoundError>> {
+  const row = await findByEmailRow(db, email);
+  if (!row) {
+    return err(new NotFoundError('User', email));
+  }
+  return ok(mapToUser(row));
+}
 
-    async findByEmail(email) {
-      const row = await findByEmailRow(email);
-      if (!row) {
-        return err(new NotFoundError('User', email));
-      }
-      return ok(mapToUser(row));
-    },
-  };
+async function findByEmailRow(db: Database, email: string) {
+  const [row] = await db.select().from(users).where(eq(users.email, email)).limit(1);
+  return row ?? null;
 }
