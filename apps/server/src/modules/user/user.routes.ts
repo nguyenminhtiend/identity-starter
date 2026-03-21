@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { validate } from '../../infra/validate.js';
+import { validate } from '../../core/validate.js';
 import type { CreateUserInput } from './user.schemas.js';
 import { createUserSchema, userIdParamSchema } from './user.schemas.js';
 import { createUser, findUserById } from './user.service.js';

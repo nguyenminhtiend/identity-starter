@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildTestApp } from '../../../test/app-builder.js';
 import { createTestDb, type TestDb } from '../../../test/db-helper.js';
-import { makeCreateUserInput } from '../../../test/factory.js';
+import { makeCreateUserInput } from './user.factory.js';
 
 let testDb: TestDb;
 let app: FastifyInstance;

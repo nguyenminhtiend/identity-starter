@@ -2,7 +2,6 @@ import { ConflictError, NotFoundError } from '@identity-starter/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type DomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js';
 import { createTestDb, type TestDb } from '../../../test/db-helper.js';
-import { makeCreateUserInput } from '../../../test/factory.js';
 import { USER_EVENTS } from '../user.events.js';
 import {
   createUser,
@@ -10,6 +9,7 @@ import {
   findUserByEmailWithPassword,
   findUserById,
 } from '../user.service.js';
+import { makeCreateUserInput } from './user.factory.js';
 
 let testDb: TestDb;
 let eventBus: InMemoryEventBus;

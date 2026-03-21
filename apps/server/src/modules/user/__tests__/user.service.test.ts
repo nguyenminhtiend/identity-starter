@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDomainEvent } from '../../../infra/event-bus.js';
-import { makeUser } from '../../../test/factory.js';
 import { USER_EVENTS } from '../user.events.js';
+import { makeUser } from './user.factory.js';
 
 describe('USER_EVENTS', () => {
   it('has CREATED event name', () => {

@@ -5,7 +5,7 @@ import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { errorHandlerPlugin } from '../../../core/plugins/error-handler.js';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
-import { makeUser } from '../../../test/factory.js';
+import { makeUser } from './user.factory.js';
 
 vi.mock('../user.service.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../user.service.js')>();

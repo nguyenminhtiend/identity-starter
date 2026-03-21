@@ -7,9 +7,9 @@ import {
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
 import { type Container, containerPlugin } from './core/container-plugin.js';
+import { registerModules } from './core/module-loader.js';
 import { errorHandlerPlugin } from './core/plugins/error-handler.js';
 import { type EventBus, InMemoryEventBus } from './infra/event-bus.js';
-import { registerModules } from './infra/module-loader.js';
 
 declare module 'fastify' {
   interface FastifyInstance {

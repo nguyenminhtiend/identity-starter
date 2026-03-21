@@ -1,80 +1,42 @@
-# Identity Starter — AI Workflow Guide
+# Identity Starter
 
-## Project Overview
+Learning + reference implementation of an identity provider (IdP). Modular monolith, pnpm + Turborepo monorepo, ESM-first.
 
-Learning + reference implementation of an identity provider (IdP). Modular monolith architecture with strict module boundaries.
+## Monorepo Layout
 
-## Monorepo Structure
+| Path | Purpose |
+|---|---|
+| `apps/server` | Fastify backend — modules in `src/modules/`, has its own detailed CLAUDE.md |
+| `packages/core` | `Result<T,E>` monad (`ok`/`err`/`unwrap`), `DomainError` hierarchy (`NotFoundError`, `ConflictError`, `ValidationError`), `Brand<T,B>` nominal types, pagination types |
+| `packages/db` | Drizzle ORM — `createDb(url)`, schema definitions in `src/schema/`, migration runner |
+| `packages/redis` | ioredis wrapper — `createRedisClient(config)`, `healthCheck(client)` |
+| `packages/config` | Shared `biome.json`, `tsconfig.base.json`, `vitest.shared.ts` |
 
-- `apps/server` — Fastify backend (modules live in `src/modules/`)
-- `packages/core` — Shared types, Result pattern, domain errors
-- `packages/db` — Drizzle ORM schema, migrations, DB client
-- `packages/redis` — ioredis client wrapper
-- `packages/config` — Shared tsconfig, biome, vitest configs
-
-## Key Commands
+## Commands
 
 ```bash
-pnpm turbo build          # Build all packages
-pnpm turbo test           # Run all tests
-pnpm biome check .        # Lint (zero errors expected)
-pnpm biome check --write . # Auto-fix lint issues
-pnpm --filter server dev  # Start dev server
-pnpm db:generate          # Generate Drizzle migrations
-pnpm db:migrate           # Run migrations
+pnpm turbo build                # Build all packages
+pnpm turbo test                 # Run all tests
+pnpm biome check .              # Lint (zero errors expected)
+pnpm biome check --write .      # Auto-fix lint issues
+pnpm --filter server dev        # Start dev server
+pnpm --filter server test:unit  # Server unit tests only
+pnpm --filter server test:integration  # Server integration tests (needs DB)
+pnpm db:generate                # Generate Drizzle migrations
+pnpm db:migrate                 # Run migrations
 ```
 
-## Architecture Rules
+## Code Style (Biome-enforced)
 
-### Module Pattern
-- Each module is a Fastify plugin in `apps/server/src/modules/<name>/`
-- Public API: `index.ts` barrel exports only types + service interface
-- No direct imports between module internals — only through `index.ts`
-- Cross-module communication via typed event bus (mitt)
-- Each module owns its DB tables — no cross-module direct table access
+- 2-space indent, single quotes, always semicolons, trailing commas everywhere, LF, 100 char width
+- Always-parenthesized arrow functions: `(x) => x`
+- `import type` for type-only imports; `node:` protocol for Node.js built-ins
+- **Errors**: `noExplicitAny`, `noUnusedImports`, `noUnusedVariables`, `noConsole` (relaxed in tests)
+- **TypeScript**: Strict mode, ES2024 target, ESNext module, Bundler resolution
 
-### Module Internal Layering
-```
-Routes (HTTP) → Service (Business Logic) → Repository (Data Access)
-```
+## Architecture Principles
 
-### Result Pattern
-- Service methods return `Result<T, DomainError>` — never throw for business logic
-- Exceptions reserved for infrastructure failures only
-- Routes translate Results to HTTP responses
-
-### Events
-- Defined per module (e.g., `user.events.ts`)
-- Emitted from service layer after successful operations
-- Type-safe via mitt
-
-## Code Style
-- **Formatter**: Biome — 2-space indent, single quotes, always semicolons, trailing commas everywhere, LF line endings, 100 char line width
-- **Arrow functions**: always parenthesized — `(x) => x`
-- **Imports**: Auto-sorted by Biome; use `import type` for type-only imports; use `node:` protocol for Node.js built-ins
-- **No `any`**: use `unknown`, generics, or proper types (enforced as error)
-- **No `console.*`**: use pino logger (relaxed in test files)
-- **Block statements required**: always use braces for if/else/for/while
-- **No unused imports/variables**: enforced as error
-- **TypeScript**: Strict mode, ESNext module, Bundler resolution
-
-## Testing
-- **Unit tests**: Mock repository, test service business logic
-- **Route tests**: Spin up Fastify with in-memory fakes, test full request/response
-- **Integration tests** (Phase 2+): Real PostgreSQL with transaction isolation
-- Test files live in `__tests__/` next to the module code
-- Run with: `pnpm turbo test`
-
-## When Adding a New Module
-1. Create `apps/server/src/modules/<name>/` with:
-   - `<name>.schemas.ts` — Zod validation schemas
-   - `<name>.types.ts` — TypeScript types (derived from Zod where possible)
-   - `<name>.repository.ts` — Drizzle data access
-   - `<name>.service.ts` — Business logic, Result returns, event emission
-   - `<name>.routes.ts` — Fastify routes
-   - `<name>.events.ts` — Event type definitions
-   - `index.ts` — Public API barrel
-   - `__tests__/` — Tests
-2. Add DB schema to `packages/db/src/schema/`
-3. Register module in `apps/server/src/infra/module-loader.ts`
-4. Add event types to `AllEvents` in `apps/server/src/app.ts`
+- **Module isolation** — each module is a Fastify plugin; public API via `index.ts` barrel only; no cross-module internal imports
+- **Domain errors throw** — services throw `DomainError` subclasses; the error-handler plugin maps them to HTTP status codes
+- **Event-driven side effects** — in-memory event bus (mitt); services emit after successful operations
+- **Each module owns its DB tables** — no cross-module direct table access
