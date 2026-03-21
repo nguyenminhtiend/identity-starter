@@ -14,7 +14,7 @@ export const createContainer = (): Container => {
 
   const { db } = createDb(env.DATABASE_URL);
 
-  instance = { db, env };
+  instance = { db };
   return instance;
 };
 

@@ -12,14 +12,6 @@ export interface BuildTestAppOptions {
 export async function buildTestApp(options: BuildTestAppOptions): Promise<FastifyInstance> {
   const container: Container = {
     db: options.db,
-    env: {
-      NODE_ENV: 'test',
-      PORT: 0,
-      HOST: '127.0.0.1',
-      DATABASE_URL: 'test://unused',
-      REDIS_URL: 'redis://localhost:6379',
-      LOG_LEVEL: 'error',
-    },
   };
 
   const app = await buildApp({

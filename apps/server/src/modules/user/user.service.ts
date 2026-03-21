@@ -1,4 +1,4 @@
-import { ConflictError, err, NotFoundError, ok, type Result } from '@identity-starter/core';
+import { ConflictError, NotFoundError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
 import { users } from '@identity-starter/db';
 import { eq } from 'drizzle-orm';
@@ -31,10 +31,10 @@ export async function createUser(
   db: Database,
   eventBus: EventBus,
   input: CreateUserInput,
-): Promise<Result<User, ConflictError>> {
+): Promise<User> {
   const existing = await findByEmailRow(db, input.email);
   if (existing) {
-    return err(new ConflictError('User', 'email', input.email));
+    throw new ConflictError('User', 'email', input.email);
   }
 
   const [row] = await db
@@ -48,26 +48,23 @@ export async function createUser(
     .returning();
   const user = mapToUser(row);
   await eventBus.publish(createDomainEvent(USER_EVENTS.CREATED, { user }));
-  return ok(user);
+  return user;
 }
 
-export async function findUserById(db: Database, id: string): Promise<Result<User, NotFoundError>> {
+export async function findUserById(db: Database, id: string): Promise<User> {
   const [row] = await db.select().from(users).where(eq(users.id, id)).limit(1);
   if (!row) {
-    return err(new NotFoundError('User', id));
+    throw new NotFoundError('User', id);
   }
-  return ok(mapToUser(row));
+  return mapToUser(row);
 }
 
-export async function findUserByEmail(
-  db: Database,
-  email: string,
-): Promise<Result<User, NotFoundError>> {
+export async function findUserByEmail(db: Database, email: string): Promise<User> {
   const row = await findByEmailRow(db, email);
   if (!row) {
-    return err(new NotFoundError('User', email));
+    throw new NotFoundError('User', email);
   }
-  return ok(mapToUser(row));
+  return mapToUser(row);
 }
 
 async function findByEmailRow(db: Database, email: string) {

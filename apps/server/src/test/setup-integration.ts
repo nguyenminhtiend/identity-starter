@@ -1,31 +1,17 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import postgres from 'postgres';
 
+const projectRoot = path.resolve(import.meta.dirname, '../..');
+
 function loadEnvFile() {
-  const monorepoRoot = path.resolve(import.meta.dirname, '../../../..');
-  const envPath = path.join(monorepoRoot, '.env');
-  if (!fs.existsSync(envPath)) {
-    return;
-  }
-  const content = fs.readFileSync(envPath, 'utf-8');
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith('#')) {
-      continue;
-    }
-    const eqIndex = trimmed.indexOf('=');
-    if (eqIndex === -1) {
-      continue;
-    }
-    const key = trimmed.slice(0, eqIndex);
-    const value = trimmed.slice(eqIndex + 1);
-    if (!(key in process.env)) {
-      process.env[key] = value;
-    }
+  try {
+    process.loadEnvFile(path.join(projectRoot, '.env'));
+  } catch {
+    // .env file is optional — env vars may come from the environment directly
   }
 }
 
@@ -42,7 +28,7 @@ export async function setup() {
   if (!url) {
     throw new Error(
       'DATABASE_URL environment variable is required for integration tests. ' +
-        'Set it in your environment or .env file at the monorepo root.',
+        'Set it in your environment or apps/server/.env file.',
     );
   }
 
@@ -70,8 +56,7 @@ export async function setup() {
   const templateUrl = replaceDbName(url, templateName);
   const migrationClient = postgres(templateUrl, { max: 1 });
   const db = drizzle(migrationClient);
-  const monorepoRoot = path.resolve(import.meta.dirname, '../../../..');
-  const migrationsFolder = path.join(monorepoRoot, 'packages/db/drizzle');
+  const migrationsFolder = path.resolve(projectRoot, '../../packages/db/drizzle');
 
   try {
     await migrate(db, { migrationsFolder });

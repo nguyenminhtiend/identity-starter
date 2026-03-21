@@ -1,3 +1,4 @@
+import { ConflictError, NotFoundError } from '@identity-starter/core';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type DomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js';
 import { createTestDb, type TestDb } from '../../../test/db-helper.js';
@@ -21,32 +22,24 @@ beforeEach(() => {
 });
 
 describe('createUser', () => {
-  it('creates a user and returns ok result', async () => {
+  it('creates a user and returns it', async () => {
     const input = makeCreateUserInput();
-    const result = await createUser(testDb.db, eventBus, input);
+    const user = await createUser(testDb.db, eventBus, input);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    expect(result.value.email).toBe(input.email);
-    expect(result.value.displayName).toBe(input.displayName);
-    expect(result.value.id).toBeDefined();
+    expect(user.email).toBe(input.email);
+    expect(user.displayName).toBe(input.displayName);
+    expect(user.id).toBeDefined();
   });
 
   it('sets correct default values', async () => {
     const input = makeCreateUserInput();
-    const result = await createUser(testDb.db, eventBus, input);
+    const user = await createUser(testDb.db, eventBus, input);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    expect(result.value.emailVerified).toBe(false);
-    expect(result.value.status).toBe('pending_verification');
-    expect(result.value.metadata).toEqual({});
-    expect(result.value.createdAt).toBeInstanceOf(Date);
-    expect(result.value.updatedAt).toBeInstanceOf(Date);
+    expect(user.emailVerified).toBe(false);
+    expect(user.status).toBe('pending_verification');
+    expect(user.metadata).toEqual({});
+    expect(user.createdAt).toBeInstanceOf(Date);
+    expect(user.updatedAt).toBeInstanceOf(Date);
   });
 
   it('publishes USER_EVENTS.CREATED event', async () => {
@@ -56,100 +49,64 @@ describe('createUser', () => {
       events.push(event);
     });
 
-    const result = await createUser(testDb.db, eventBus, input);
+    await createUser(testDb.db, eventBus, input);
 
-    expect(result.ok).toBe(true);
     expect(events).toHaveLength(1);
     expect(events[0].eventName).toBe(USER_EVENTS.CREATED);
     expect(events[0].payload).toHaveProperty('user');
   });
 
-  it('returns ConflictError on duplicate email', async () => {
+  it('throws ConflictError on duplicate email', async () => {
     const input = makeCreateUserInput();
     await createUser(testDb.db, eventBus, input);
 
-    const duplicateResult = await createUser(testDb.db, eventBus, input);
-
-    expect(duplicateResult.ok).toBe(false);
-    if (duplicateResult.ok) {
-      return;
-    }
-    expect(duplicateResult.error.code).toBe('CONFLICT');
+    await expect(createUser(testDb.db, eventBus, input)).rejects.toThrow(ConflictError);
   });
 
   it('stores nullable passwordHash', async () => {
     const input = makeCreateUserInput({ passwordHash: null });
-    const result = await createUser(testDb.db, eventBus, input);
+    const user = await createUser(testDb.db, eventBus, input);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    expect(result.value.passwordHash).toBeNull();
+    expect(user.passwordHash).toBeNull();
   });
 
   it('stores custom metadata', async () => {
     const input = makeCreateUserInput({ metadata: { role: 'admin', tier: 'premium' } });
-    const result = await createUser(testDb.db, eventBus, input);
+    const user = await createUser(testDb.db, eventBus, input);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    expect(result.value.metadata).toEqual({ role: 'admin', tier: 'premium' });
+    expect(user.metadata).toEqual({ role: 'admin', tier: 'premium' });
   });
 });
 
 describe('findUserById', () => {
-  it('returns ok with user when found', async () => {
+  it('returns user when found', async () => {
     const input = makeCreateUserInput();
-    const createResult = await createUser(testDb.db, eventBus, input);
-    if (!createResult.ok) {
-      throw new Error('Setup failed');
-    }
+    const created = await createUser(testDb.db, eventBus, input);
 
-    const result = await findUserById(testDb.db, createResult.value.id);
+    const user = await findUserById(testDb.db, created.id);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    expect(result.value.id).toBe(createResult.value.id);
-    expect(result.value.email).toBe(input.email);
+    expect(user.id).toBe(created.id);
+    expect(user.email).toBe(input.email);
   });
 
-  it('returns NotFoundError for non-existent id', async () => {
-    const result = await findUserById(testDb.db, '00000000-0000-0000-0000-000000000000');
-
-    expect(result.ok).toBe(false);
-    if (result.ok) {
-      return;
-    }
-    expect(result.error.code).toBe('NOT_FOUND');
+  it('throws NotFoundError for non-existent id', async () => {
+    await expect(findUserById(testDb.db, '00000000-0000-0000-0000-000000000000')).rejects.toThrow(
+      NotFoundError,
+    );
   });
 });
 
 describe('findUserByEmail', () => {
-  it('returns ok with user when found', async () => {
+  it('returns user when found', async () => {
     const input = makeCreateUserInput();
     await createUser(testDb.db, eventBus, input);
 
-    const result = await findUserByEmail(testDb.db, input.email);
+    const user = await findUserByEmail(testDb.db, input.email);
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) {
-      return;
-    }
-    expect(result.value.email).toBe(input.email);
+    expect(user.email).toBe(input.email);
   });
 
-  it('returns NotFoundError for non-existent email', async () => {
-    const result = await findUserByEmail(testDb.db, 'nonexistent@test.com');
-
-    expect(result.ok).toBe(false);
-    if (result.ok) {
-      return;
-    }
-    expect(result.error.code).toBe('NOT_FOUND');
+  it('throws NotFoundError for non-existent email', async () => {
+    await expect(findUserByEmail(testDb.db, 'nonexistent@test.com')).rejects.toThrow(NotFoundError);
   });
 });

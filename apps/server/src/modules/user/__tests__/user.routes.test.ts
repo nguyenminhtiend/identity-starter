@@ -1,8 +1,9 @@
-import { ConflictError, err, NotFoundError, ok } from '@identity-starter/core';
+import { ConflictError, NotFoundError } from '@identity-starter/core';
 import type { FastifyInstance } from 'fastify';
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { errorHandlerPlugin } from '../../../core/plugins/error-handler.js';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
 import { makeUser } from '../../../test/factory.js';
 
@@ -26,10 +27,10 @@ describe('user routes', () => {
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
 
-    // Decorate with fake container and eventBus so routes can initialize
-    app.decorate('container', { db: {}, env: {} });
+    app.decorate('container', { db: {} });
     app.decorate('eventBus', new InMemoryEventBus());
 
+    await app.register(errorHandlerPlugin);
     await app.register(userRoutes, { prefix: '/api/users' });
     await app.ready();
   });
@@ -51,7 +52,7 @@ describe('user routes', () => {
 
     it('returns 201 with created user on success', async () => {
       const user = makeUser({ email: 'test@example.com', displayName: 'Test User' });
-      vi.mocked(createUser).mockResolvedValue(ok(user));
+      vi.mocked(createUser).mockResolvedValue(user);
 
       const response = await app.inject({
         method: 'POST',
@@ -67,8 +68,8 @@ describe('user routes', () => {
     });
 
     it('returns 409 on duplicate email', async () => {
-      vi.mocked(createUser).mockResolvedValue(
-        err(new ConflictError('User', 'email', 'test@example.com')),
+      vi.mocked(createUser).mockRejectedValue(
+        new ConflictError('User', 'email', 'test@example.com'),
       );
 
       const response = await app.inject({
@@ -123,7 +124,7 @@ describe('user routes', () => {
 
     it('calls createUser with db, eventBus, and parsed input', async () => {
       const user = makeUser();
-      vi.mocked(createUser).mockResolvedValue(ok(user));
+      vi.mocked(createUser).mockResolvedValue(user);
 
       await app.inject({
         method: 'POST',
@@ -147,7 +148,7 @@ describe('user routes', () => {
 
     it('returns 200 with user on success', async () => {
       const user = makeUser({ id: validId });
-      vi.mocked(findUserById).mockResolvedValue(ok(user));
+      vi.mocked(findUserById).mockResolvedValue(user);
 
       const response = await app.inject({
         method: 'GET',
@@ -161,7 +162,7 @@ describe('user routes', () => {
     });
 
     it('returns 404 when user not found', async () => {
-      vi.mocked(findUserById).mockResolvedValue(err(new NotFoundError('User', validId)));
+      vi.mocked(findUserById).mockRejectedValue(new NotFoundError('User', validId));
 
       const response = await app.inject({
         method: 'GET',
@@ -183,7 +184,7 @@ describe('user routes', () => {
 
     it('calls findUserById with db and parsed id', async () => {
       const user = makeUser({ id: validId });
-      vi.mocked(findUserById).mockResolvedValue(ok(user));
+      vi.mocked(findUserById).mockResolvedValue(user);
 
       await app.inject({
         method: 'GET',
