@@ -96,3 +96,20 @@ export async function findUserByEmailWithPassword(
   }
   return mapToUserWithPassword(row);
 }
+
+export interface UserServiceDeps {
+  db: Database;
+  eventBus: EventBus;
+}
+
+export function createUserService(deps: UserServiceDeps) {
+  const { db, eventBus } = deps;
+  return {
+    create: (input: CreateUserInput) => createUser(db, eventBus, input),
+    findById: (id: string) => findUserById(db, id),
+    findByEmail: (email: string) => findUserByEmail(db, email),
+    findByEmailWithPassword: (email: string) => findUserByEmailWithPassword(db, email),
+  };
+}
+
+export type UserService = ReturnType<typeof createUserService>;

@@ -161,3 +161,22 @@ export async function changePassword(
 
   await eventBus.publish(createDomainEvent(AUTH_EVENTS.PASSWORD_CHANGED, { userId }));
 }
+
+export interface AuthServiceDeps {
+  db: Database;
+  eventBus: EventBus;
+}
+
+export function createAuthService(deps: AuthServiceDeps) {
+  const { db, eventBus } = deps;
+  return {
+    register: (input: RegisterInput) => register(db, eventBus, input),
+    login: (input: LoginInput, meta: { ipAddress?: string; userAgent?: string }) =>
+      login(db, eventBus, input, meta),
+    logout: (sessionId: string, userId: string) => logout(db, eventBus, sessionId, userId),
+    changePassword: (userId: string, currentSessionId: string, input: ChangePasswordInput) =>
+      changePassword(db, eventBus, userId, currentSessionId, input),
+  };
+}
+
+export type AuthService = ReturnType<typeof createAuthService>;

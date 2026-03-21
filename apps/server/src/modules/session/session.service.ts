@@ -126,3 +126,22 @@ export async function deleteExpiredSessions(db: Database): Promise<number> {
 
   return deleted.length;
 }
+
+export interface SessionServiceDeps {
+  db: Database;
+  eventBus: EventBus;
+}
+
+export function createSessionService(deps: SessionServiceDeps) {
+  const { db, eventBus } = deps;
+  return {
+    create: (input: CreateSessionInput) => createSession(db, eventBus, input),
+    validate: (token: string) => validateSession(db, token),
+    revoke: (id: string) => revokeSession(db, eventBus, id),
+    revokeAllForUser: (userId: string, excludeSessionId?: string) =>
+      revokeAllUserSessions(db, eventBus, userId, excludeSessionId),
+    deleteExpired: () => deleteExpiredSessions(db),
+  };
+}
+
+export type SessionService = ReturnType<typeof createSessionService>;

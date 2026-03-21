@@ -8,15 +8,21 @@ import { errorHandlerPlugin } from '../../../core/plugins/error-handler.js';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
 import { makeSession } from '../../session/__tests__/session.factory.js';
 
+const mockRegister = vi.fn();
+const mockLogin = vi.fn();
+const mockLogout = vi.fn();
+const mockChangePassword = vi.fn();
+
 vi.mock('../auth.service.js', () => ({
-  register: vi.fn(),
-  login: vi.fn(),
-  logout: vi.fn(),
-  changePassword: vi.fn(),
+  createAuthService: vi.fn(() => ({
+    register: mockRegister,
+    login: mockLogin,
+    logout: mockLogout,
+    changePassword: mockChangePassword,
+  })),
 }));
 
 import { authRoutes } from '../auth.routes.js';
-import { changePassword, login, logout, register } from '../auth.service.js';
 
 describe('auth routes', () => {
   let app: FastifyInstance;
@@ -27,8 +33,10 @@ describe('auth routes', () => {
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
 
-    app.decorate('container', { db: {} as unknown as Container['db'] });
-    app.decorate('eventBus', new InMemoryEventBus());
+    app.decorate('container', {
+      db: {} as unknown as Container['db'],
+      eventBus: new InMemoryEventBus(),
+    });
 
     app.decorate('requireSession', async (request: FastifyRequest) => {
       request.session = mockSession;
@@ -47,10 +55,10 @@ describe('auth routes', () => {
   });
 
   beforeEach(() => {
-    vi.mocked(register).mockReset();
-    vi.mocked(login).mockReset();
-    vi.mocked(logout).mockReset();
-    vi.mocked(changePassword).mockReset();
+    mockRegister.mockReset();
+    mockLogin.mockReset();
+    mockLogout.mockReset();
+    mockChangePassword.mockReset();
   });
 
   describe('POST /api/auth/register', () => {
@@ -70,7 +78,7 @@ describe('auth routes', () => {
           status: 'pending_verification' as const,
         },
       };
-      vi.mocked(register).mockResolvedValue(authResponse);
+      mockRegister.mockResolvedValue(authResponse);
 
       const response = await app.inject({
         method: 'POST',
@@ -86,7 +94,7 @@ describe('auth routes', () => {
     });
 
     it('returns 409 on duplicate email', async () => {
-      vi.mocked(register).mockRejectedValue(new ConflictError('User', 'email', 'new@example.com'));
+      mockRegister.mockRejectedValue(new ConflictError('User', 'email', 'new@example.com'));
 
       const response = await app.inject({
         method: 'POST',
@@ -137,7 +145,7 @@ describe('auth routes', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('calls register with db, eventBus, and parsed input', async () => {
+    it('calls authService.register with parsed input', async () => {
       const authResponse = {
         token: 'tok',
         user: {
@@ -147,7 +155,7 @@ describe('auth routes', () => {
           status: 'active' as const,
         },
       };
-      vi.mocked(register).mockResolvedValue(authResponse);
+      mockRegister.mockResolvedValue(authResponse);
 
       await app.inject({
         method: 'POST',
@@ -155,9 +163,7 @@ describe('auth routes', () => {
         payload: validBody,
       });
 
-      expect(register).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
+      expect(mockRegister).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'new@example.com',
           password: 'securepass123',
@@ -183,7 +189,7 @@ describe('auth routes', () => {
           status: 'active' as const,
         },
       };
-      vi.mocked(login).mockResolvedValue(authResponse);
+      mockLogin.mockResolvedValue(authResponse);
 
       const response = await app.inject({
         method: 'POST',
@@ -198,7 +204,7 @@ describe('auth routes', () => {
     });
 
     it('returns 401 on invalid credentials', async () => {
-      vi.mocked(login).mockRejectedValue(new UnauthorizedError('Invalid email or password'));
+      mockLogin.mockRejectedValue(new UnauthorizedError('Invalid email or password'));
 
       const response = await app.inject({
         method: 'POST',
@@ -229,7 +235,7 @@ describe('auth routes', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('calls login with db, eventBus, input, and meta', async () => {
+    it('calls authService.login with input and meta', async () => {
       const authResponse = {
         token: 'tok',
         user: {
@@ -239,7 +245,7 @@ describe('auth routes', () => {
           status: 'active' as const,
         },
       };
-      vi.mocked(login).mockResolvedValue(authResponse);
+      mockLogin.mockResolvedValue(authResponse);
 
       await app.inject({
         method: 'POST',
@@ -247,9 +253,7 @@ describe('auth routes', () => {
         payload: validBody,
       });
 
-      expect(login).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
+      expect(mockLogin).toHaveBeenCalledWith(
         expect.objectContaining({ email: 'user@example.com', password: 'securepass123' }),
         expect.objectContaining({ ipAddress: expect.any(String) }),
       );
@@ -258,7 +262,7 @@ describe('auth routes', () => {
 
   describe('POST /api/auth/logout', () => {
     it('returns 204 on success', async () => {
-      vi.mocked(logout).mockResolvedValue(undefined);
+      mockLogout.mockResolvedValue(undefined);
 
       const response = await app.inject({
         method: 'POST',
@@ -269,8 +273,8 @@ describe('auth routes', () => {
       expect(response.statusCode).toBe(204);
     });
 
-    it('calls logout with db, eventBus, sessionId, and userId', async () => {
-      vi.mocked(logout).mockResolvedValue(undefined);
+    it('calls authService.logout with sessionId and userId', async () => {
+      mockLogout.mockResolvedValue(undefined);
 
       await app.inject({
         method: 'POST',
@@ -278,12 +282,7 @@ describe('auth routes', () => {
         headers: { authorization: 'Bearer valid-token' },
       });
 
-      expect(logout).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
-        mockSession.id,
-        mockSession.userId,
-      );
+      expect(mockLogout).toHaveBeenCalledWith(mockSession.id, mockSession.userId);
     });
   });
 
@@ -294,7 +293,7 @@ describe('auth routes', () => {
     };
 
     it('returns 204 on success', async () => {
-      vi.mocked(changePassword).mockResolvedValue(undefined);
+      mockChangePassword.mockResolvedValue(undefined);
 
       const response = await app.inject({
         method: 'POST',
@@ -307,9 +306,7 @@ describe('auth routes', () => {
     });
 
     it('returns 401 on wrong current password', async () => {
-      vi.mocked(changePassword).mockRejectedValue(
-        new UnauthorizedError('Current password is incorrect'),
-      );
+      mockChangePassword.mockRejectedValue(new UnauthorizedError('Current password is incorrect'));
 
       const response = await app.inject({
         method: 'POST',
@@ -343,8 +340,8 @@ describe('auth routes', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('calls changePassword with db, eventBus, userId, sessionId, and input', async () => {
-      vi.mocked(changePassword).mockResolvedValue(undefined);
+    it('calls authService.changePassword with userId, sessionId, and input', async () => {
+      mockChangePassword.mockResolvedValue(undefined);
 
       await app.inject({
         method: 'POST',
@@ -353,9 +350,7 @@ describe('auth routes', () => {
         payload: validBody,
       });
 
-      expect(changePassword).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
+      expect(mockChangePassword).toHaveBeenCalledWith(
         mockSession.userId,
         mockSession.id,
         expect.objectContaining({

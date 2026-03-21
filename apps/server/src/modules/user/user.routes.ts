@@ -1,10 +1,10 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { createUserSchema, userIdParamSchema, userResponseSchema } from './user.schemas.js';
-import { createUser, findUserById } from './user.service.js';
+import { createUserService } from './user.service.js';
 
 export const userRoutes: FastifyPluginAsyncZod = async (fastify) => {
-  const { db } = fastify.container;
-  const { eventBus } = fastify;
+  const { db, eventBus } = fastify.container;
+  const userService = createUserService({ db, eventBus });
 
   fastify.addHook('onRequest', fastify.requireSession);
 
@@ -17,7 +17,7 @@ export const userRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (request, reply) => {
-      const user = await createUser(db, eventBus, request.body);
+      const user = await userService.create(request.body);
       return reply.status(201).send(user);
     },
   );
@@ -31,7 +31,7 @@ export const userRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (request) => {
-      return findUserById(db, request.params.id);
+      return userService.findById(request.params.id);
     },
   );
 };

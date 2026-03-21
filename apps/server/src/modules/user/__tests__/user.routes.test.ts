@@ -9,17 +9,21 @@ import { InMemoryEventBus } from '../../../infra/event-bus.js';
 import { makeSession } from '../../session/__tests__/session.factory.js';
 import { makeUser } from './user.factory.js';
 
+const mockCreateUser = vi.fn();
+const mockFindUserById = vi.fn();
+
 vi.mock('../user.service.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../user.service.js')>();
   return {
     ...actual,
-    createUser: vi.fn(),
-    findUserById: vi.fn(),
+    createUserService: vi.fn(() => ({
+      create: mockCreateUser,
+      findById: mockFindUserById,
+    })),
   };
 });
 
 import { userRoutes } from '../user.routes.js';
-import { createUser, findUserById } from '../user.service.js';
 
 describe('user routes', () => {
   let app: FastifyInstance;
@@ -30,8 +34,10 @@ describe('user routes', () => {
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
 
-    app.decorate('container', { db: {} as unknown as Container['db'] });
-    app.decorate('eventBus', new InMemoryEventBus());
+    app.decorate('container', {
+      db: {} as unknown as Container['db'],
+      eventBus: new InMemoryEventBus(),
+    });
 
     app.decorate('requireSession', async (request: FastifyRequest) => {
       request.session = mockSession;
@@ -50,8 +56,8 @@ describe('user routes', () => {
   });
 
   beforeEach(() => {
-    vi.mocked(createUser).mockReset();
-    vi.mocked(findUserById).mockReset();
+    mockCreateUser.mockReset();
+    mockFindUserById.mockReset();
   });
 
   describe('POST /api/users', () => {
@@ -62,7 +68,7 @@ describe('user routes', () => {
 
     it('returns 201 with created user on success', async () => {
       const user = makeUser({ email: 'test@example.com', displayName: 'Test User' });
-      vi.mocked(createUser).mockResolvedValue(user);
+      mockCreateUser.mockResolvedValue(user);
 
       const response = await app.inject({
         method: 'POST',
@@ -78,9 +84,7 @@ describe('user routes', () => {
     });
 
     it('returns 409 on duplicate email', async () => {
-      vi.mocked(createUser).mockRejectedValue(
-        new ConflictError('User', 'email', 'test@example.com'),
-      );
+      mockCreateUser.mockRejectedValue(new ConflictError('User', 'email', 'test@example.com'));
 
       const response = await app.inject({
         method: 'POST',
@@ -132,9 +136,9 @@ describe('user routes', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('calls createUser with db, eventBus, and parsed input', async () => {
+    it('calls userService.create with parsed input', async () => {
       const user = makeUser();
-      vi.mocked(createUser).mockResolvedValue(user);
+      mockCreateUser.mockResolvedValue(user);
 
       await app.inject({
         method: 'POST',
@@ -142,9 +146,7 @@ describe('user routes', () => {
         payload: validBody,
       });
 
-      expect(createUser).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
+      expect(mockCreateUser).toHaveBeenCalledWith(
         expect.objectContaining({
           email: 'test@example.com',
           displayName: 'Test User',
@@ -158,7 +160,7 @@ describe('user routes', () => {
 
     it('returns 200 with user on success', async () => {
       const user = makeUser({ id: validId });
-      vi.mocked(findUserById).mockResolvedValue(user);
+      mockFindUserById.mockResolvedValue(user);
 
       const response = await app.inject({
         method: 'GET',
@@ -172,7 +174,7 @@ describe('user routes', () => {
     });
 
     it('returns 404 when user not found', async () => {
-      vi.mocked(findUserById).mockRejectedValue(new NotFoundError('User', validId));
+      mockFindUserById.mockRejectedValue(new NotFoundError('User', validId));
 
       const response = await app.inject({
         method: 'GET',
@@ -192,16 +194,16 @@ describe('user routes', () => {
       expect(response.statusCode).toBe(400);
     });
 
-    it('calls findUserById with db and parsed id', async () => {
+    it('calls userService.findById with parsed id', async () => {
       const user = makeUser({ id: validId });
-      vi.mocked(findUserById).mockResolvedValue(user);
+      mockFindUserById.mockResolvedValue(user);
 
       await app.inject({
         method: 'GET',
         url: `/api/users/${validId}`,
       });
 
-      expect(findUserById).toHaveBeenCalledWith(expect.anything(), validId);
+      expect(mockFindUserById).toHaveBeenCalledWith(validId);
     });
   });
 });

@@ -12,18 +12,11 @@ import { env } from './core/env.js';
 import { registerModules } from './core/module-loader.js';
 import { authPlugin } from './core/plugins/auth.js';
 import { errorHandlerPlugin } from './core/plugins/error-handler.js';
-import { type EventBus, InMemoryEventBus } from './infra/event-bus.js';
-
-declare module 'fastify' {
-  interface FastifyInstance {
-    eventBus: EventBus;
-  }
-}
+import { validateSession } from './modules/session/session.service.js';
 
 export interface AppOptions {
   container: Container;
   logger?: FastifyServerOptions['logger'];
-  eventBus?: EventBus;
 }
 
 export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
@@ -47,10 +40,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(containerPlugin, { container: options.container });
   await app.register(errorHandlerPlugin);
 
-  const eventBus = options.eventBus ?? new InMemoryEventBus();
-  app.decorate('eventBus', eventBus);
-
-  await app.register(authPlugin);
+  await app.register(authPlugin, { validateSession });
 
   app.get('/health', async () => ({ status: 'ok' }));
 

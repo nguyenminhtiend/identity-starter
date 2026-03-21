@@ -1,4 +1,5 @@
 import { createDb } from '@identity-starter/db';
+import { InMemoryEventBus } from '../infra/event-bus.js';
 import type { Container } from './container-plugin.js';
 import { env } from './env.js';
 
@@ -14,7 +15,7 @@ export const createContainer = (): Container => {
 
   const { db } = createDb(env.DATABASE_URL);
 
-  instance = { db };
+  instance = { db, eventBus: new InMemoryEventBus() };
   return instance;
 };
 

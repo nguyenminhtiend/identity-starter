@@ -1,4 +1,4 @@
-import mitt from 'mitt';
+import Emittery from 'emittery';
 import { v7 as uuidv7 } from 'uuid';
 
 export interface DomainEvent<T = unknown> {
@@ -20,23 +20,33 @@ export function createDomainEvent<T>(eventName: string, payload: T): DomainEvent
   return { id: uuidv7(), eventName, occurredOn: new Date(), payload };
 }
 
+interface EmitteryEvent {
+  name: string;
+  data: DomainEvent;
+}
+
 export class InMemoryEventBus implements EventBus {
-  private emitter = mitt<Record<string, DomainEvent>>();
+  private emitter = new Emittery();
+  private wrapperMap = new Map<EventHandler, (wrapped: unknown) => Promise<void> | void>();
 
   async publish(event: DomainEvent): Promise<void> {
-    try {
-      this.emitter.emit(event.eventName, event);
-    } catch (_err) {
-      // Prevent subscriber errors from crashing the publisher.
-      // In production, replace with structured logging.
-    }
+    await this.emitter.emit(event.eventName, event);
   }
 
   subscribe(eventName: string, handler: EventHandler): void {
-    this.emitter.on(eventName, handler);
+    const wrapper = (wrapped: unknown) => {
+      const { data } = wrapped as EmitteryEvent;
+      return handler(data);
+    };
+    this.wrapperMap.set(handler, wrapper);
+    this.emitter.on(eventName, wrapper);
   }
 
   unsubscribe(eventName: string, handler: EventHandler): void {
-    this.emitter.off(eventName, handler);
+    const wrapper = this.wrapperMap.get(handler);
+    if (wrapper) {
+      this.emitter.off(eventName, wrapper);
+      this.wrapperMap.delete(handler);
+    }
   }
 }

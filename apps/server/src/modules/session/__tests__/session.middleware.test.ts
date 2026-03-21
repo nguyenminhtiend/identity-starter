@@ -14,6 +14,8 @@ vi.mock('../session.service.js', () => ({
 import { authPlugin } from '../../../core/plugins/auth.js';
 import { validateSession } from '../session.service.js';
 
+const mockedValidateSession = vi.mocked(validateSession);
+
 describe('authPlugin (requireSession)', () => {
   let app: FastifyInstance;
 
@@ -21,10 +23,12 @@ describe('authPlugin (requireSession)', () => {
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
-    app.decorate('container', { db: {} as unknown as Container['db'] });
-    app.decorate('eventBus', new InMemoryEventBus());
+    app.decorate('container', {
+      db: {} as unknown as Container['db'],
+      eventBus: new InMemoryEventBus(),
+    });
     await app.register(errorHandlerPlugin);
-    await app.register(authPlugin);
+    await app.register(authPlugin, { validateSession: mockedValidateSession });
 
     app.get('/test', { preHandler: app.requireSession }, async (request) => {
       return { userId: request.userId, sessionId: request.session.id };

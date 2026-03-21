@@ -1,12 +1,22 @@
 import { UnauthorizedError } from '@identity-starter/core';
+import type { Database } from '@identity-starter/db';
 import type { FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
-import type { Session } from '../../modules/session/session.schemas.js';
-import { validateSession } from '../../modules/session/session.service.js';
+
+export interface SessionLike {
+  id: string;
+  userId: string;
+}
+
+export type ValidateSessionFn = (db: Database, token: string) => Promise<SessionLike | null>;
+
+export interface AuthPluginOptions {
+  validateSession: ValidateSessionFn;
+}
 
 declare module 'fastify' {
   interface FastifyRequest {
-    session: Session;
+    session: SessionLike;
     userId: string;
   }
 
@@ -15,10 +25,10 @@ declare module 'fastify' {
   }
 }
 
-export const authPlugin = fp(async (fastify) => {
+export const authPlugin = fp(async (fastify, opts: AuthPluginOptions) => {
   const { db } = fastify.container;
 
-  fastify.decorateRequest('session', null as unknown as Session);
+  fastify.decorateRequest('session', null as unknown as SessionLike);
   fastify.decorateRequest('userId', '');
 
   fastify.decorate('requireSession', async (request: FastifyRequest) => {
@@ -28,7 +38,7 @@ export const authPlugin = fp(async (fastify) => {
     }
 
     const rawToken = authHeader.slice(7);
-    const session = await validateSession(db, rawToken);
+    const session = await opts.validateSession(db, rawToken);
     if (!session) {
       throw new UnauthorizedError('Invalid or expired session');
     }

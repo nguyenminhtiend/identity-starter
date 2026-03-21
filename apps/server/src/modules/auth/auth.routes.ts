@@ -5,11 +5,11 @@ import {
   loginSchema,
   registerSchema,
 } from './auth.schemas.js';
-import { changePassword, login, logout, register } from './auth.service.js';
+import { createAuthService } from './auth.service.js';
 
 export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
-  const { db } = fastify.container;
-  const { eventBus } = fastify;
+  const { db, eventBus } = fastify.container;
+  const authService = createAuthService({ db, eventBus });
 
   fastify.post(
     '/register',
@@ -21,7 +21,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
     },
     async (request, reply) => {
-      const result = await register(db, eventBus, request.body);
+      const result = await authService.register(request.body);
       return reply.status(201).send(result);
     },
   );
@@ -36,7 +36,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
     },
     async (request, reply) => {
-      const result = await login(db, eventBus, request.body, {
+      const result = await authService.login(request.body, {
         ipAddress: request.ip,
         userAgent: request.headers['user-agent'],
       });
@@ -45,7 +45,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
   );
 
   fastify.post('/logout', { preHandler: fastify.requireSession }, async (request, reply) => {
-    await logout(db, eventBus, request.session.id, request.userId);
+    await authService.logout(request.session.id, request.userId);
     return reply.status(204).send();
   });
 
@@ -56,7 +56,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       schema: { body: changePasswordSchema },
     },
     async (request, reply) => {
-      await changePassword(db, eventBus, request.userId, request.session.id, request.body);
+      await authService.changePassword(request.userId, request.session.id, request.body);
       return reply.status(204).send();
     },
   );
