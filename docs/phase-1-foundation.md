@@ -18,7 +18,7 @@ Build a learning + reference implementation of an identity provider (like Auth0/
 
 | Category | Choice |
 |---|---|
-| Runtime | Node.js v24 |
+| Runtime | Node.js ≥22 |
 | Package Manager | pnpm |
 | Monorepo | Turborepo |
 | Backend Framework | Fastify |
@@ -253,3 +253,13 @@ LOG_LEVEL=debug
 - [ ] **DB**: Drizzle migrations run (requires running PostgreSQL)
 - [ ] **Server**: `pnpm --filter server dev` starts (requires DB + Redis)
 - [ ] **Redis**: Client connects (requires running Redis)
+
+---
+
+## Implementation Notes
+
+- Node.js requirement is `≥22` (per package.json engines field)
+- pnpm version pinned to `9.15.4`
+- Fastify 5.2, Drizzle 0.38, Vitest 3.0, Biome 1.9
+- Git hooks managed by lefthook 1.10
+- 4 commits completed for Phase 1 (scaffold → user module → enhancements → formatting)
