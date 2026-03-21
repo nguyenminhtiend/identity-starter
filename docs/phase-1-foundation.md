@@ -7,10 +7,10 @@
 Build a learning + reference implementation of an identity provider (like Auth0/Keycloak) to deeply understand IdP internals. This is Phase 1 of 4, establishing the monorepo scaffold, shared infrastructure, database layer, and the first module (User Management).
 
 **Phases overview:**
-1. **Foundation** (this phase) — Scaffold, DB, Redis, event bus, User module
-2. **Authentication** — Password auth, passkeys/WebAuthn, sessions, login UI
-3. **OAuth2/OIDC** — Authorization server, client registry, token service, consent UI
-4. **Admin & Governance** — Admin API, RBAC, audit logging, admin dashboard
+1. **Foundation** (this phase) — Scaffold, DB, Redis, event bus, User module (internal service, no HTTP routes)
+2. **Authentication** — Auth API, account self-service API, sessions, passkeys, login UI
+3. **OAuth2/OIDC** — Authorization server, client management, token service, consent UI
+4. **Admin & Governance** — Admin management API (`/api/admin/*`), RBAC, audit logging, admin dashboard
 
 ---
 
@@ -95,7 +95,9 @@ Build a learning + reference implementation of an identity provider (like Auth0/
 
 ## User Module
 
-### Service Methods
+The User module is an **internal data layer** with no HTTP routes. It exposes service methods consumed by other modules (Auth in Phase 2, Admin API in Phase 4). User management routes appear as admin endpoints (`/api/admin/users/*`) in Phase 4.
+
+### Service Methods (Internal API)
 - `create`, `findById`, `findByEmail`, `update`, `delete`
 - `list` (paginated)
 - `updatePassword`, `verifyEmail`, `suspend`, `activate`
@@ -104,29 +106,17 @@ Build a learning + reference implementation of an identity provider (like Auth0/
 - `user.created`, `user.updated`, `user.deleted`
 - `user.suspended`, `user.activated`, `user.email_verified`
 
-### API Routes
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/users` | Create user |
-| GET | `/api/users/:id` | Get user by ID |
-| GET | `/api/users` | List users (paginated) |
-| PATCH | `/api/users/:id` | Update user |
-| DELETE | `/api/users/:id` | Delete user |
-| POST | `/api/users/:id/suspend` | Suspend user |
-| POST | `/api/users/:id/activate` | Activate user |
-
 ---
 
 ## Testing Strategy
 
 ### Unit Tests (Vitest)
 - Service layer: mock repository, test business logic + Result returns
-- Repository layer: test against real PostgreSQL (integration)
 - Schemas: test Zod validation for edge cases
 
 ### Integration Tests (Vitest)
-- Route tests: spin up Fastify instance, test full request/response cycle
-- Use real PostgreSQL with test database, transactions for isolation
+- Service layer: test against real PostgreSQL with test database
+- Use transactions for isolation
 - Test event bus emissions
 
 ### E2E Tests (Playwright) — Phase 2+

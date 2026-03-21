@@ -155,25 +155,28 @@ Not supported (keep scope manageable):
 
 ## API Routes
 
-### Client Routes (Admin-Only)
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/clients` | Admin | Create OAuth client |
-| GET | `/api/clients` | Admin | List OAuth clients |
-| GET | `/api/clients/:id` | Admin | Get client details |
-| PATCH | `/api/clients/:id` | Admin | Update client |
-| DELETE | `/api/clients/:id` | Admin | Delete client |
-| POST | `/api/clients/:id/rotate-secret` | Admin | Rotate client secret |
+### Client Routes (`/api/admin/clients/*` — Admin-Only)
 
-### OAuth Routes
+> **Bridge auth**: Until Phase 4 adds proper RBAC, client routes are protected with a session + admin flag check.
+
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/oauth/authorize` | Session | Authorization endpoint — initiates auth code flow |
-| POST | `/api/oauth/token` | Client auth | Token endpoint — exchanges code/refresh for tokens |
-| POST | `/api/oauth/revoke` | Client auth | Revoke a refresh token |
-| GET | `/api/oauth/userinfo` | Bearer token | OpenID Connect UserInfo endpoint |
-| POST | `/api/oauth/consent` | Session | Submit consent decision |
-| DELETE | `/api/oauth/consent/:clientId` | Session | Revoke consent for a client |
+| POST | `/api/admin/clients` | Admin | Create OAuth client |
+| GET | `/api/admin/clients` | Admin | List OAuth clients |
+| GET | `/api/admin/clients/:id` | Admin | Get client details |
+| PATCH | `/api/admin/clients/:id` | Admin | Update client |
+| DELETE | `/api/admin/clients/:id` | Admin | Delete client |
+| POST | `/api/admin/clients/:id/rotate-secret` | Admin | Rotate client secret |
+
+### OAuth Routes (`/oauth/*`)
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | `/oauth/authorize` | Session | Authorization endpoint — initiates auth code flow |
+| POST | `/oauth/token` | Client auth | Token endpoint — exchanges code/refresh for tokens |
+| POST | `/oauth/revoke` | Client auth | Revoke a refresh token |
+| GET | `/oauth/userinfo` | Bearer token | OpenID Connect UserInfo endpoint |
+| POST | `/oauth/consent` | Session | Submit consent decision |
+| DELETE | `/oauth/consent/:clientId` | Session | Revoke consent for a client |
 
 ### Discovery Routes (Public)
 | Method | Path | Auth | Description |

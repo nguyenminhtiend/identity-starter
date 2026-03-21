@@ -1,12 +1,9 @@
-import type { Database } from '@identity-starter/db';
 import { createDb } from '@identity-starter/db';
-import fp from 'fastify-plugin';
-import { type Env, env } from './env.js';
+import type { Container } from './container-plugin.js';
+import { env } from './env.js';
 
-export interface Container {
-  db: Database;
-  env: Env;
-}
+export type { Container } from './container-plugin.js';
+export { containerPlugin } from './container-plugin.js';
 
 let instance: Container | null = null;
 
@@ -27,13 +24,3 @@ export const getContainer = (): Container => {
   }
   return instance;
 };
-
-export const containerPlugin = fp(async (fastify, opts: { container: Container }) => {
-  fastify.decorate('container', opts.container);
-});
-
-declare module 'fastify' {
-  interface FastifyInstance {
-    container: Container;
-  }
-}

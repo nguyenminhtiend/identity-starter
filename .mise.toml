@@ -1,3 +1,57 @@
 [tools]
 node = "24.14.0"
 pnpm = "10.32.1"
+
+# ── Dev ──────────────────────────────────────────────────
+[tasks.dev]
+description = "Start server in dev mode (watch)"
+run = "pnpm dev"
+
+# ── Build ────────────────────────────────────────────────
+[tasks.build]
+description = "Build all packages"
+run = "pnpm build"
+
+# ── Test ─────────────────────────────────────────────────
+[tasks.test]
+description = "Run all tests"
+run = "pnpm test"
+
+[tasks."test:unit"]
+description = "Run unit tests only"
+run = "pnpm --filter @identity-starter/server test:unit"
+
+[tasks."test:integration"]
+description = "Run integration tests only"
+run = "pnpm --filter @identity-starter/server test:integration"
+
+[tasks."test:watch"]
+description = "Run unit tests in watch mode"
+run = "pnpm --filter @identity-starter/server test:watch"
+
+# ── Database ─────────────────────────────────────────────
+[tasks."db:migrate"]
+description = "Run database migrations"
+run = "pnpm db:migrate"
+
+[tasks."db:generate"]
+description = "Generate migrations from schema changes"
+run = "pnpm db:generate"
+
+# ── Lint / Format ───────────────────────────────────────
+[tasks.lint]
+description = "Lint all files (biome check)"
+run = "pnpm lint"
+
+[tasks."lint:fix"]
+description = "Lint and auto-fix all files"
+run = "pnpm lint:fix"
+
+# ── Misc ────────────────────────────────────────────────
+[tasks.typecheck]
+description = "Type-check all packages"
+run = "pnpm turbo run build"
+
+[tasks.install]
+description = "Install dependencies"
+run = "pnpm install"

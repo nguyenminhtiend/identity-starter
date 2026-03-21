@@ -6,7 +6,7 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod';
-import { type Container, containerPlugin } from './core/container.js';
+import { type Container, containerPlugin } from './core/container-plugin.js';
 import { errorHandlerPlugin } from './core/plugins/error-handler.js';
 import { type EventBus, InMemoryEventBus } from './infra/event-bus.js';
 import { registerModules } from './infra/module-loader.js';
@@ -20,6 +20,7 @@ declare module 'fastify' {
 export interface AppOptions {
   container: Container;
   logger?: FastifyServerOptions['logger'];
+  eventBus?: EventBus;
 }
 
 export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
@@ -35,7 +36,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(containerPlugin, { container: options.container });
   await app.register(errorHandlerPlugin);
 
-  const eventBus = new InMemoryEventBus();
+  const eventBus = options.eventBus ?? new InMemoryEventBus();
   app.decorate('eventBus', eventBus);
 
   app.get('/health', async () => ({ status: 'ok' }));

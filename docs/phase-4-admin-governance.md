@@ -48,9 +48,11 @@ Add administrative capabilities, role-based access control, audit logging, and a
 - **Retention** — Not enforced in Phase 4 (can add partitioning/archival later)
 
 ### Admin Module as Aggregator
-- The Admin module doesn't own data — it aggregates existing module services behind admin-only routes
-- Admin routes require `admin` or `super_admin` role
+- The Admin module doesn't own data — it aggregates existing module services behind admin-only routes under `/api/admin/*`
+- All routes require RBAC permissions (e.g., `users:read`, `clients:write`, `audit:read`)
 - Provides admin-specific views (e.g., user detail with sessions + passkeys + roles) that span multiple modules
+- User CRUD routes (`/api/admin/users/*`) appear here — this is the first time user management is exposed over HTTP
+- Retrofits Phase 3's client management routes with proper RBAC permission checks
 
 ### Separate Admin Dashboard (`apps/admin/`)
 - Separate from the user-facing `apps/web/` — different security posture and audience
@@ -75,11 +77,11 @@ Add administrative capabilities, role-based access control, audit logging, and a
 - Query API with filtering: by actorId, action, resource, date range, with pagination
 - Append-only — repository exposes only `create()` and `find*()`
 
-### Admin API
-- **User management**: search users (with filters), view user detail (sessions, passkeys, roles), suspend/activate, delete
-- **Client management**: list clients, view client detail, create/update/delete clients
-- **Session management**: list active sessions (by user or all), revoke sessions
-- **Role/permission management**: full CRUD, assign/revoke roles
+### Admin API (`/api/admin/*`)
+- **User management**: create, search (with filters), view detail (sessions, passkeys, roles), update, suspend/activate, delete
+- **Client management**: retrofits Phase 3's client routes (`/api/admin/clients/*`) with proper RBAC permissions
+- **Session management**: list all active sessions (filterable by user), revoke any session
+- **Role/permission management**: full CRUD, assign/revoke roles to users
 - **Audit log viewer**: query with filters, export (JSON)
 - **System stats**: user count, active sessions, client count (simple aggregates)
 
@@ -153,32 +155,49 @@ Indexes: timestamp, actorId, action, resource.
 
 ## API Routes
 
-### RBAC Routes (Admin-Only)
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/roles` | Admin | Create role |
-| GET | `/api/roles` | Admin | List roles |
-| GET | `/api/roles/:id` | Admin | Get role with permissions |
-| PATCH | `/api/roles/:id` | Admin | Update role |
-| DELETE | `/api/roles/:id` | Admin | Delete role (non-system only) |
-| POST | `/api/roles/:id/permissions` | Admin | Add permissions to role |
-| DELETE | `/api/roles/:roleId/permissions/:permissionId` | Admin | Remove permission from role |
-| GET | `/api/permissions` | Admin | List all permissions |
-| POST | `/api/users/:id/roles` | Admin | Assign role to user |
-| DELETE | `/api/users/:userId/roles/:roleId` | Admin | Revoke role from user |
+All admin routes live under `/api/admin/*` and require RBAC permissions. Phase 4 also retrofits Phase 3's client routes (`/api/admin/clients/*`) with proper RBAC.
 
-### Audit Routes (Admin-Only)
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/audit-logs` | Admin | Query audit logs with filters |
-| GET | `/api/audit-logs/export` | Admin | Export audit logs as JSON |
+### User Management (`/api/admin/users/*`)
+| Method | Path | Permission | Description |
+|--------|------|------------|-------------|
+| POST | `/api/admin/users` | `users:write` | Create user (optional password, hashed server-side) |
+| GET | `/api/admin/users` | `users:read` | List/search users (paginated, filterable) |
+| GET | `/api/admin/users/:id` | `users:read` | User detail (+ sessions, roles, passkeys) |
+| PATCH | `/api/admin/users/:id` | `users:write` | Update user |
+| DELETE | `/api/admin/users/:id` | `users:delete` | Delete user |
+| POST | `/api/admin/users/:id/suspend` | `users:write` | Suspend user |
+| POST | `/api/admin/users/:id/activate` | `users:write` | Activate user |
+| POST | `/api/admin/users/:id/roles` | `roles:write` | Assign role to user |
+| DELETE | `/api/admin/users/:id/roles/:roleId` | `roles:write` | Revoke role from user |
 
-### Admin Routes
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/api/admin/users` | Admin | Search users with filters |
-| GET | `/api/admin/users/:id` | Admin | User detail (sessions, passkeys, roles) |
-| GET | `/api/admin/stats` | Admin | System stats (counts) |
+### Roles & Permissions (`/api/admin/roles/*`, `/api/admin/permissions`)
+| Method | Path | Permission | Description |
+|--------|------|------------|-------------|
+| POST | `/api/admin/roles` | `roles:write` | Create role |
+| GET | `/api/admin/roles` | `roles:read` | List roles |
+| GET | `/api/admin/roles/:id` | `roles:read` | Get role with permissions |
+| PATCH | `/api/admin/roles/:id` | `roles:write` | Update role |
+| DELETE | `/api/admin/roles/:id` | `roles:delete` | Delete role (non-system only) |
+| POST | `/api/admin/roles/:id/permissions` | `roles:write` | Add permissions to role |
+| DELETE | `/api/admin/roles/:id/permissions/:pid` | `roles:write` | Remove permission from role |
+| GET | `/api/admin/permissions` | `roles:read` | List all permissions |
+
+### Sessions (`/api/admin/sessions/*`)
+| Method | Path | Permission | Description |
+|--------|------|------------|-------------|
+| GET | `/api/admin/sessions` | `sessions:read` | List all active sessions (filterable) |
+| DELETE | `/api/admin/sessions/:id` | `sessions:revoke` | Revoke any session |
+
+### Audit Logs (`/api/admin/audit-logs/*`)
+| Method | Path | Permission | Description |
+|--------|------|------------|-------------|
+| GET | `/api/admin/audit-logs` | `audit:read` | Query audit logs with filters |
+| GET | `/api/admin/audit-logs/export` | `audit:export` | Export audit logs as JSON |
+
+### System Stats
+| Method | Path | Permission | Description |
+|--------|------|------------|-------------|
+| GET | `/api/admin/stats` | `audit:read` | System overview (user count, active sessions, client count) |
 
 ---
 
@@ -221,13 +240,16 @@ On first run (or via a seed script):
 - **Admin service**: Mock all dependent services, test aggregation logic
 
 ### Route Tests
-- All admin routes require admin role — test 403 for non-admin users
+- All `/api/admin/*` routes require RBAC permissions — test 403 for missing permissions
+- Test user management routes (CRUD, suspend/activate, role assignment)
 - Test RBAC routes with various role/permission combinations
 - Test audit log query with filters and pagination
-- Test admin aggregate endpoints
+- Test admin stats endpoint
+- Verify Phase 3 client routes now enforced with RBAC
 
 ### Integration Tests
 - Full flow: create user → assign admin role → access admin routes
+- Admin user management flow: create user via admin → suspend → activate → delete
 - Audit trail verification: perform actions → query audit log → verify entries
 - Permission enforcement: attempt operations without required permissions → verify 403
 

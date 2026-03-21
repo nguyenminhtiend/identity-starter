@@ -14,6 +14,7 @@ Build the authentication layer on top of Phase 1's User module. This phase adds 
 - **Auth module** — Password verification, session creation/validation, login/logout flows
 - **Session module** — Session storage, validation middleware, revocation
 - **Passkey module** — WebAuthn registration + authentication
+- **Account module** — End-user self-service (profile, sessions, passkeys)
 
 ### New App
 - **Web UI** (`apps/web/`) — Next.js 15 with shadcn/ui + Tailwind CSS v4
@@ -69,9 +70,13 @@ Build the authentication layer on top of Phase 1's User module. This phase adds 
 - Session creation on successful auth (password or passkey)
 - Session validation middleware (Fastify `onRequest` hook)
 - Session revocation (single session logout)
-- List active sessions for a user
 - Redis-backed session cache for fast validation lookups
 - Configurable session expiry (default: 7 days)
+
+### Account Self-Service (`/api/account/*`)
+- View and update own profile (displayName, metadata)
+- List and revoke own active sessions
+- List, rename, and delete own passkeys
 
 ### Login UI (Next.js)
 - Login page (email + password)
@@ -113,29 +118,28 @@ Build the authentication layer on top of Phase 1's User module. This phase adds 
 
 ## API Routes
 
-### Auth Routes
+### Auth Routes (`/api/auth/*`)
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| POST | `/api/auth/register` | Public | Register with email + password |
-| POST | `/api/auth/login` | Public | Login with email + password |
-| POST | `/api/auth/logout` | Authenticated | Logout (revoke current session) |
-| POST | `/api/auth/change-password` | Authenticated | Change password |
+| POST | `/api/auth/register` | Public | Sign up (email + password + displayName) |
+| POST | `/api/auth/login` | Public | Sign in → session token |
+| POST | `/api/auth/logout` | Session | Sign out (revoke current session) |
+| POST | `/api/auth/change-password` | Session | Change own password (requires current password) |
+| POST | `/api/auth/passkeys/register/options` | Session | Get WebAuthn registration challenge |
+| POST | `/api/auth/passkeys/register/verify` | Session | Complete passkey registration |
+| POST | `/api/auth/passkeys/login/options` | Public | Get WebAuthn login challenge |
+| POST | `/api/auth/passkeys/login/verify` | Public | Complete passkey login → session |
 
-### Session Routes
+### Account Routes (`/api/account/*`) — End-User Self-Service
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
-| GET | `/api/sessions` | Authenticated | List current user's active sessions |
-| DELETE | `/api/sessions/:id` | Authenticated | Revoke a specific session |
-
-### Passkey Routes
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| POST | `/api/passkeys/register/options` | Authenticated | Get WebAuthn registration options |
-| POST | `/api/passkeys/register/verify` | Authenticated | Verify WebAuthn registration |
-| POST | `/api/passkeys/authenticate/options` | Public | Get WebAuthn auth options |
-| POST | `/api/passkeys/authenticate/verify` | Public | Verify WebAuthn authentication |
-| GET | `/api/passkeys` | Authenticated | List user's passkeys |
-| DELETE | `/api/passkeys/:id` | Authenticated | Delete a passkey |
+| GET | `/api/account/profile` | Session | Get own profile |
+| PATCH | `/api/account/profile` | Session | Update own displayName/metadata |
+| GET | `/api/account/sessions` | Session | List own active sessions |
+| DELETE | `/api/account/sessions/:id` | Session | Revoke one of own sessions |
+| GET | `/api/account/passkeys` | Session | List own passkeys |
+| PATCH | `/api/account/passkeys/:id` | Session | Rename a passkey |
+| DELETE | `/api/account/passkeys/:id` | Session | Delete a passkey |
 
 ---
 
@@ -155,9 +159,10 @@ Build the authentication layer on top of Phase 1's User module. This phase adds 
 
 ## Cross-Module Dependencies
 
-- **Auth module** → User module (findByEmail, updatePassword), Session module (create, revoke)
+- **Auth module** → User module (create, findByEmail, updatePassword), Session module (create, revoke)
 - **Session module** → packages/db (sessions table), packages/redis (session cache)
 - **Passkey module** → User module (findById), Session module (create — for passkey login)
+- **Account module** → User module (findById, update), Session module (list, revoke), Passkey module (list, rename, delete)
 
 ---
 
@@ -167,16 +172,20 @@ Build the authentication layer on top of Phase 1's User module. This phase adds 
 - **Auth service**: Mock user service + session service, test login/register/logout/changePassword flows
 - **Session service**: Mock repository + Redis cache, test create/validate/revoke logic
 - **Passkey service**: Mock repository + user service, test WebAuthn flows with @simplewebauthn/server test helpers
+- **Account service**: Mock user/session/passkey services, test self-service profile/session/passkey management
 
 ### Route Tests
 - Spin up Fastify with in-memory fakes for each module
-- Test full request/response cycle including auth middleware
+- Test full request/response cycle including session middleware
+- Test auth routes (register, login, logout, change-password, passkey flows)
+- Test account routes (profile CRUD, session list/revoke, passkey management)
 - Test error cases (invalid credentials, expired sessions, suspended accounts)
 
 ### Integration Tests
 - Real PostgreSQL with transaction isolation
 - Real Redis for session cache tests
 - End-to-end auth flows (register → login → access protected route → logout)
+- Account self-service flows (update profile → list sessions → revoke session)
 
 ---
 
