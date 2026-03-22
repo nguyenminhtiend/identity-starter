@@ -9,6 +9,7 @@ export {
   mfaChallenges,
   oauthClientColumns,
   oauthClients,
+  parRequests,
   passkeyColumns,
   passkeys,
   passwordResetTokens,

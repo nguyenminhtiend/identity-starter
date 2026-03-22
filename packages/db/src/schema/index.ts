@@ -7,6 +7,7 @@ export {
 export { loginAttempts } from './login-attempt.js';
 export { mfaChallenges } from './mfa-challenge.js';
 export { oauthClientColumns, oauthClients } from './oauth-client.js';
+export { parRequests } from './par-request.js';
 export { passkeyColumns, passkeys } from './passkey.js';
 export { passwordResetTokens } from './password-reset-token.js';
 export { recoveryCodes } from './recovery-code.js';

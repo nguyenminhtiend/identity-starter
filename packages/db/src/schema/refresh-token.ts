@@ -17,6 +17,7 @@ export const refreshTokens = pgTable('refresh_tokens', {
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
   /** Plaintext successor, set only when revoked via rotation (grace window for concurrent refresh). */
   rotationGracePlaintext: text('rotation_grace_plaintext'),
+  dpopJkt: text('dpop_jkt'),
   familyId: uuid('family_id').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });

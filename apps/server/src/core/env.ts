@@ -16,6 +16,8 @@ const EnvSchema = z.object({
   REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().default(2592000),
   AUTH_CODE_TTL_SECONDS: z.coerce.number().default(600),
   REFRESH_GRACE_PERIOD_SECONDS: z.coerce.number().default(10),
+  PAR_TTL_SECONDS: z.coerce.number().default(60),
+  DPOP_NONCE_TTL_SECONDS: z.coerce.number().default(300),
   TOTP_ENCRYPTION_KEY: z.string().length(64).optional(),
 });
 
