@@ -59,6 +59,7 @@ describe('discovery routes', () => {
       });
 
       expect(response.statusCode).toBe(200);
+      expect(response.headers['access-control-allow-origin']).toBe('*');
       const body = JSON.parse(response.body);
       expect(body.issuer).toBe('http://localhost:3000');
       expect(body.authorization_endpoint).toBe('http://localhost:3000/oauth/authorize');
@@ -89,6 +90,7 @@ describe('discovery routes', () => {
       });
 
       expect(response.statusCode).toBe(200);
+      expect(response.headers['access-control-allow-origin']).toBe('*');
       expect(JSON.parse(response.body)).toEqual(jwks);
       expect(mocks.getJwks).toHaveBeenCalled();
     });

@@ -31,6 +31,11 @@ export const discoveryRoutes: FastifyPluginAsyncZod = async (fastify) => {
   const issuer = env.JWT_ISSUER;
   const issuerBase = issuer.replace(/\/$/, '');
 
+  fastify.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('Access-Control-Allow-Origin', '*');
+    return payload;
+  });
+
   fastify.get(
     '/.well-known/openid-configuration',
     {

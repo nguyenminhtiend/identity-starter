@@ -175,17 +175,21 @@ describe('oauth routes', () => {
       const body = buildTokenRequestAuthCode();
       mocks.authenticateClient.mockResolvedValue(null);
       mocks.exchangeToken.mockResolvedValue(tokenResponse);
+      const origin = 'https://client.example';
 
       const response = await app.inject({
         method: 'POST',
         url: '/oauth/token',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', origin },
         payload: body,
       });
 
       expect(response.statusCode).toBe(200);
       expect(JSON.parse(response.body)).toMatchObject(tokenResponse);
       expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null);
+      expect(response.headers['access-control-allow-origin']).toBe(origin);
+      expect(response.headers['access-control-allow-methods']).toBe('POST');
+      expect(response.headers['access-control-allow-credentials']).toBe('true');
     });
 
     it('returns 200 for refresh_token grant', async () => {
@@ -312,16 +316,18 @@ describe('oauth routes', () => {
   describe('POST /oauth/revoke', () => {
     it('returns 200', async () => {
       mocks.revokeToken.mockResolvedValue(undefined);
+      const origin = 'https://revoke-client.example';
 
       const response = await app.inject({
         method: 'POST',
         url: '/oauth/revoke',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', origin },
         payload: { token: 'tok' },
       });
 
       expect(response.statusCode).toBe(200);
       expect(mocks.revokeToken).toHaveBeenCalledWith({ token: 'tok' });
+      expect(response.headers['access-control-allow-origin']).toBe(origin);
     });
 
     it('returns 401 when client auth is provided but invalid', async () => {

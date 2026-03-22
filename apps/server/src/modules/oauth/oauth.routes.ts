@@ -1,6 +1,6 @@
 import { UnauthorizedError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import * as jose from 'jose';
 
@@ -55,6 +55,19 @@ async function resolveAuthenticatedClient(
   return null;
 }
 
+async function setOAuthTokenEndpointCors(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  const origin = request.headers.origin;
+  if (origin) {
+    reply.header('Access-Control-Allow-Origin', origin);
+    reply.header('Access-Control-Allow-Methods', 'POST');
+    reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, DPoP');
+    reply.header('Access-Control-Allow-Credentials', 'true');
+  }
+}
+
 export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
   const { db, eventBus } = fastify.container;
 
@@ -100,6 +113,7 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.post(
     '/token',
     {
+      onRequest: [setOAuthTokenEndpointCors],
       schema: {
         body: tokenRequestSchema,
         response: { 200: tokenResponseSchema },
@@ -129,6 +143,7 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.post(
     '/revoke',
     {
+      onRequest: [setOAuthTokenEndpointCors],
       schema: {
         body: revokeBodySchema,
       },
