@@ -1,6 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('../login-attempts.service.js', () => ({
+  getRecentFailureCount: vi.fn(() => Promise.resolve(0)),
+  calculateDelay: vi.fn(() => 0),
+  recordAttempt: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock('../../mfa/mfa.service.js', () => ({
+  checkMfaEnrolled: vi.fn(() => Promise.resolve(false)),
+}));
+
 import { createDomainEvent } from '../../../infra/event-bus.js';
 import { AUTH_EVENTS } from '../auth.events.js';
+
+describe('auth.service module', () => {
+  it('exports login (loads with login-attempts mocked)', async () => {
+    vi.stubEnv('DATABASE_URL', 'postgresql://127.0.0.1:5432/unit_test');
+    const { login } = await import('../auth.service.js');
+    expect(typeof login).toBe('function');
+  });
+});
 
 describe('AUTH_EVENTS', () => {
   it('has REGISTERED event name', () => {
@@ -21,6 +40,14 @@ describe('AUTH_EVENTS', () => {
 
   it('has FAILED_LOGIN event name', () => {
     expect(AUTH_EVENTS.FAILED_LOGIN).toBe('auth.failed_login');
+  });
+
+  it('has PASSWORD_RESET_REQUESTED event name', () => {
+    expect(AUTH_EVENTS.PASSWORD_RESET_REQUESTED).toBe('auth.password_reset.requested');
+  });
+
+  it('has PASSWORD_RESET_COMPLETED event name', () => {
+    expect(AUTH_EVENTS.PASSWORD_RESET_COMPLETED).toBe('auth.password_reset.completed');
   });
 });
 

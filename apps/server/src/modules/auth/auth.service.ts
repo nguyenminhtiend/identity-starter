@@ -1,24 +1,34 @@
+import crypto from 'node:crypto';
 import { ConflictError, UnauthorizedError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
-import { userColumns, users } from '@identity-starter/db';
+import { mfaChallenges, userColumns, users } from '@identity-starter/db';
 import { eq } from 'drizzle-orm';
 import { hashPassword, verifyPassword } from '../../core/password.js';
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
+import { checkMfaEnrolled } from '../mfa/mfa.service.js';
 import { createSession, revokeAllUserSessions, revokeSession } from '../session/session.service.js';
 import { AUTH_EVENTS } from './auth.events.js';
 import type {
   AuthResponse,
   ChangePasswordInput,
   LoginInput,
+  MfaChallengeResponse,
   RegisterInput,
 } from './auth.schemas.js';
+import { generateVerificationToken } from './email-verification.service.js';
+import { calculateDelay, getRecentFailureCount, recordAttempt } from './login-attempts.service.js';
 
 type SafeRow = typeof userColumns;
 type SafeRowResult = { [K in keyof SafeRow]: SafeRow[K]['_']['data'] };
 
-function toAuthResponse(row: SafeRowResult, token: string): AuthResponse {
+function toAuthResponse(
+  row: SafeRowResult,
+  token: string,
+  verificationToken?: string,
+): AuthResponse {
   return {
     token,
+    ...(verificationToken !== undefined ? { verificationToken } : {}),
     user: {
       id: row.id,
       email: row.email,
@@ -66,20 +76,35 @@ export async function register(
 
   const session = await createSession(db, eventBus, { userId: userRow.id });
 
+  const verificationToken = await generateVerificationToken(db, userRow.id);
+
   await eventBus.publish(createDomainEvent(AUTH_EVENTS.REGISTERED, { userId: userRow.id }));
 
-  return toAuthResponse(userRow, session.token);
+  return toAuthResponse(userRow, session.token, verificationToken);
 }
+
+const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 export async function login(
   db: Database,
   eventBus: EventBus,
   input: LoginInput,
   meta: { ipAddress?: string; userAgent?: string },
-): Promise<AuthResponse> {
+): Promise<AuthResponse | MfaChallengeResponse> {
+  const ipAddress = meta.ipAddress ?? '0.0.0.0';
+
+  const failureCount = await getRecentFailureCount(db, input.email);
+  const delaySec = calculateDelay(failureCount);
+  if (delaySec > 0) {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, delaySec * 1000);
+    });
+  }
+
   const [row] = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
 
   if (!row || !row.passwordHash) {
+    await recordAttempt(db, { email: input.email, ipAddress, success: false });
     await eventBus.publish(
       createDomainEvent(AUTH_EVENTS.FAILED_LOGIN, {
         email: input.email,
@@ -90,6 +115,7 @@ export async function login(
   }
 
   if (row.status === 'suspended') {
+    await recordAttempt(db, { email: input.email, ipAddress, success: false });
     await eventBus.publish(
       createDomainEvent(AUTH_EVENTS.FAILED_LOGIN, {
         email: input.email,
@@ -101,6 +127,7 @@ export async function login(
 
   const valid = await verifyPassword(row.passwordHash, input.password);
   if (!valid) {
+    await recordAttempt(db, { email: input.email, ipAddress, success: false });
     await eventBus.publish(
       createDomainEvent(AUTH_EVENTS.FAILED_LOGIN, {
         email: input.email,
@@ -108,6 +135,22 @@ export async function login(
       }),
     );
     throw new UnauthorizedError('Invalid email or password');
+  }
+
+  await recordAttempt(db, { email: input.email, ipAddress, success: true });
+
+  const hasMfa = await checkMfaEnrolled(db, row.id);
+  if (hasMfa) {
+    const mfaToken = crypto.randomBytes(32).toString('base64url');
+    await db.insert(mfaChallenges).values({
+      userId: row.id,
+      token: mfaToken,
+      expiresAt: new Date(Date.now() + MFA_CHALLENGE_TTL_MS),
+    });
+
+    await eventBus.publish(createDomainEvent(AUTH_EVENTS.LOGIN, { userId: row.id }));
+
+    return { mfaRequired: true, mfaToken };
   }
 
   const session = await createSession(db, eventBus, {

@@ -24,6 +24,10 @@ function replaceDbName(databaseUrl: string, dbName: string): string {
 export async function setup() {
   loadEnvFile();
 
+  if (!process.env.TOTP_ENCRYPTION_KEY) {
+    process.env.TOTP_ENCRYPTION_KEY = 'a'.repeat(64);
+  }
+
   const url = process.env.DATABASE_URL;
   if (!url) {
     throw new Error(

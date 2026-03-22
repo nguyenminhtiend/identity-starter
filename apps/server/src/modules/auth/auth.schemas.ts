@@ -26,6 +26,7 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
 export const authResponseSchema = z.object({
   token: z.string(),
+  verificationToken: z.string().optional(),
   user: z.object({
     id: z.uuid(),
     email: z.email(),
@@ -36,6 +37,7 @@ export const authResponseSchema = z.object({
 
 export interface AuthResponse {
   token: string;
+  verificationToken?: string;
   user: {
     id: string;
     email: string;
@@ -43,3 +45,15 @@ export interface AuthResponse {
     status: 'active' | 'suspended' | 'pending_verification';
   };
 }
+
+export const mfaChallengeResponseSchema = z.object({
+  mfaRequired: z.literal(true),
+  mfaToken: z.string(),
+});
+
+export interface MfaChallengeResponse {
+  mfaRequired: true;
+  mfaToken: string;
+}
+
+export const loginResponseSchema = z.union([authResponseSchema, mfaChallengeResponseSchema]);

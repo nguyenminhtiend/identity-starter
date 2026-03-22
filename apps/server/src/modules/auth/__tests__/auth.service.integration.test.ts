@@ -1,7 +1,8 @@
+import assert from 'node:assert';
 import { ConflictError, UnauthorizedError } from '@identity-starter/core';
 import { users } from '@identity-starter/db';
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type DomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js';
 import { createTestDb, type TestDb } from '../../../test/db-helper.js';
 import { validateSession } from '../../session/session.service.js';
@@ -31,6 +32,8 @@ describe('register', () => {
 
     expect(result.token).toBeDefined();
     expect(result.token.length).toBeGreaterThan(0);
+    expect(result.verificationToken).toBeDefined();
+    expect(result.verificationToken?.length).toBeGreaterThan(0);
     expect(result.user.email).toBe(input.email);
     expect(result.user.displayName).toBe(input.displayName);
     expect(result.user.id).toBeDefined();
@@ -80,9 +83,9 @@ describe('login', () => {
       { ipAddress: '127.0.0.1', userAgent: 'vitest' },
     );
 
-    expect(result.token).toBeDefined();
-    expect(result.user.email).toBe(input.email);
-    expect(result.user).not.toHaveProperty('passwordHash');
+    expect('token' in result && result.token).toBeDefined();
+    expect('user' in result && result.user.email).toBe(input.email);
+    expect('user' in result && result.user).not.toHaveProperty('passwordHash');
   });
 
   it('publishes LOGIN event', async () => {
@@ -168,6 +171,46 @@ describe('login', () => {
       ),
     ).rejects.toThrow(UnauthorizedError);
   });
+
+  it('applies progressive delay after five failed logins', async () => {
+    const input = makeRegisterInput();
+    await register(testDb.db, eventBus, input);
+
+    for (let step = 0; step < 5; step += 1) {
+      await login(
+        testDb.db,
+        eventBus,
+        { email: input.email, password: 'wrong-password' },
+        { ipAddress: '127.0.0.1' },
+      ).catch(() => {});
+    }
+
+    const originalSetTimeout = globalThis.setTimeout.bind(globalThis);
+    const setTimeoutSpy = vi
+      .spyOn(globalThis, 'setTimeout')
+      .mockImplementation((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
+        if (timeout === 1000 && typeof handler === 'function') {
+          (handler as (...a: unknown[]) => void)(...args);
+          return 0 as unknown as ReturnType<typeof setTimeout>;
+        }
+        return originalSetTimeout(handler, timeout ?? 0, ...(args as []));
+      });
+
+    try {
+      await expect(
+        login(
+          testDb.db,
+          eventBus,
+          { email: input.email, password: 'wrong-password' },
+          { ipAddress: '127.0.0.1' },
+        ),
+      ).rejects.toThrow(UnauthorizedError);
+
+      expect(setTimeoutSpy).toHaveBeenCalled();
+    } finally {
+      setTimeoutSpy.mockRestore();
+    }
+  });
 });
 
 describe('logout', () => {
@@ -196,7 +239,8 @@ describe('changePassword', () => {
     const result = await register(testDb.db, eventBus, input);
 
     const session = await validateSession(testDb.db, result.token);
-    await changePassword(testDb.db, eventBus, result.user.id, session!.id, {
+    assert(session);
+    await changePassword(testDb.db, eventBus, result.user.id, session.id, {
       currentPassword: input.password,
       newPassword: 'brand-new-pass-123',
     });
@@ -208,7 +252,7 @@ describe('changePassword', () => {
       { ipAddress: '127.0.0.1' },
     );
 
-    expect(loginResult.token).toBeDefined();
+    expect('token' in loginResult && loginResult.token).toBeDefined();
   });
 
   it('rejects login with old password after change', async () => {
@@ -216,7 +260,8 @@ describe('changePassword', () => {
     const result = await register(testDb.db, eventBus, input);
 
     const session2 = await validateSession(testDb.db, result.token);
-    await changePassword(testDb.db, eventBus, result.user.id, session2!.id, {
+    assert(session2);
+    await changePassword(testDb.db, eventBus, result.user.id, session2.id, {
       currentPassword: input.password,
       newPassword: 'brand-new-pass-456',
     });
@@ -253,7 +298,8 @@ describe('changePassword', () => {
     const result = await register(testDb.db, eventBus, input);
 
     const session3 = await validateSession(testDb.db, result.token);
-    await changePassword(testDb.db, eventBus, result.user.id, session3!.id, {
+    assert(session3);
+    await changePassword(testDb.db, eventBus, result.user.id, session3.id, {
       currentPassword: input.password,
       newPassword: 'another-new-pass',
     });

@@ -12,6 +12,13 @@ const mockRegister = vi.fn();
 const mockLogin = vi.fn();
 const mockLogout = vi.fn();
 const mockChangePassword = vi.fn();
+const mockVerifyEmail = vi.fn();
+const mockResendVerificationForEmail = vi.fn();
+
+const { mockRequestPasswordReset, mockResetPassword } = vi.hoisted(() => ({
+  mockRequestPasswordReset: vi.fn(),
+  mockResetPassword: vi.fn(),
+}));
 
 vi.mock('../auth.service.js', () => ({
   createAuthService: vi.fn(() => ({
@@ -20,6 +27,18 @@ vi.mock('../auth.service.js', () => ({
     logout: mockLogout,
     changePassword: mockChangePassword,
   })),
+}));
+
+vi.mock('../email-verification.service.js', () => ({
+  createEmailVerificationService: vi.fn(() => ({
+    verifyEmail: mockVerifyEmail,
+    resendVerificationForEmail: mockResendVerificationForEmail,
+  })),
+}));
+
+vi.mock('../password-reset.service.js', () => ({
+  requestPasswordReset: mockRequestPasswordReset,
+  resetPassword: mockResetPassword,
 }));
 
 import { authRoutes } from '../auth.routes.js';
@@ -59,6 +78,10 @@ describe('auth routes', () => {
     mockLogin.mockReset();
     mockLogout.mockReset();
     mockChangePassword.mockReset();
+    mockVerifyEmail.mockReset();
+    mockResendVerificationForEmail.mockReset();
+    mockRequestPasswordReset.mockReset();
+    mockResetPassword.mockReset();
   });
 
   describe('POST /api/auth/register', () => {
@@ -358,6 +381,189 @@ describe('auth routes', () => {
           newPassword: 'newpassword1',
         }),
       );
+    });
+  });
+
+  describe('POST /api/auth/verify-email', () => {
+    it('returns 200 with message on success', async () => {
+      mockVerifyEmail.mockResolvedValue(undefined);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/verify-email',
+        payload: { token: 'verification-token' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ message: 'Email verified successfully.' });
+    });
+
+    it('returns 401 when verification fails', async () => {
+      mockVerifyEmail.mockRejectedValue(
+        new UnauthorizedError('Invalid or expired verification token'),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/verify-email',
+        payload: { token: 'bad' },
+      });
+
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('returns 400 on missing token', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/verify-email',
+        payload: {},
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('calls verifyEmail with token from body', async () => {
+      mockVerifyEmail.mockResolvedValue(undefined);
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/auth/verify-email',
+        payload: { token: 'my-token' },
+      });
+
+      expect(mockVerifyEmail).toHaveBeenCalledWith('my-token');
+    });
+  });
+
+  describe('POST /api/auth/resend-verification', () => {
+    it('returns 200 with message and optional token', async () => {
+      mockResendVerificationForEmail.mockResolvedValue({
+        message: 'Verification email has been sent.',
+        verificationToken: 'new-token',
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/resend-verification',
+        payload: { email: 'user@example.com' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        message: 'Verification email has been sent.',
+        verificationToken: 'new-token',
+      });
+    });
+
+    it('returns 400 on invalid email', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/resend-verification',
+        payload: { email: 'not-an-email' },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it('calls resendVerificationForEmail with email from body', async () => {
+      mockResendVerificationForEmail.mockResolvedValue({
+        message: 'If your account is eligible, a verification email has been sent.',
+      });
+
+      await app.inject({
+        method: 'POST',
+        url: '/api/auth/resend-verification',
+        payload: { email: 'a@b.com' },
+      });
+
+      expect(mockResendVerificationForEmail).toHaveBeenCalledWith('a@b.com');
+    });
+  });
+
+  describe('POST /api/auth/forgot-password', () => {
+    it('returns 200 with message and optional resetToken', async () => {
+      mockRequestPasswordReset.mockResolvedValue('reset-token-value');
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/forgot-password',
+        payload: { email: 'user@example.com' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body.message).toBeDefined();
+      expect(body.resetToken).toBe('reset-token-value');
+      expect(mockRequestPasswordReset.mock.calls[0][2]).toBe('user@example.com');
+    });
+
+    it('returns 200 without resetToken when service returns null', async () => {
+      mockRequestPasswordReset.mockResolvedValue(null);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/forgot-password',
+        payload: { email: 'missing@example.com' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body.resetToken).toBeUndefined();
+    });
+
+    it('returns 400 on invalid email', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/forgot-password',
+        payload: { email: 'bad' },
+      });
+
+      expect(response.statusCode).toBe(400);
+    });
+  });
+
+  describe('POST /api/auth/reset-password', () => {
+    it('returns 200 on success', async () => {
+      mockResetPassword.mockResolvedValue(undefined);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/reset-password',
+        payload: { token: 'valid-reset-token', newPassword: 'newpassword1' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json().message).toBe('Password reset successfully');
+      expect(mockResetPassword).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        expect.objectContaining({
+          token: 'valid-reset-token',
+          newPassword: 'newpassword1',
+        }),
+      );
+    });
+
+    it('returns 401 when token is invalid', async () => {
+      mockResetPassword.mockRejectedValue(new UnauthorizedError('Invalid or expired reset token'));
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/reset-password',
+        payload: { token: 'bad', newPassword: 'newpassword1' },
+      });
+
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('returns 400 on short newPassword', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/api/auth/reset-password',
+        payload: { token: 't', newPassword: 'short' },
+      });
+
+      expect(response.statusCode).toBe(400);
     });
   });
 });

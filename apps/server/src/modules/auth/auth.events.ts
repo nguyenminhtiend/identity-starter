@@ -4,6 +4,9 @@ export const AUTH_EVENTS = {
   LOGOUT: 'auth.logout',
   PASSWORD_CHANGED: 'auth.password_changed',
   FAILED_LOGIN: 'auth.failed_login',
+  EMAIL_VERIFIED: 'auth.email_verified',
+  PASSWORD_RESET_REQUESTED: 'auth.password_reset.requested',
+  PASSWORD_RESET_COMPLETED: 'auth.password_reset.completed',
 } as const;
 
 export interface AuthRegisteredPayload {
@@ -26,4 +29,18 @@ export interface AuthPasswordChangedPayload {
 export interface AuthFailedLoginPayload {
   email: string;
   reason: string;
+}
+
+export interface AuthPasswordResetRequestedPayload {
+  userId: string;
+  email: string;
+  token: string;
+}
+
+export interface AuthPasswordResetCompletedPayload {
+  userId: string;
+}
+
+export interface AuthEmailVerifiedPayload {
+  userId: string;
 }

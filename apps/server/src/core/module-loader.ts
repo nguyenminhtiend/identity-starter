@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
+import { accountRoutes } from '../modules/account/index.js';
 import { authRoutes } from '../modules/auth/index.js';
+import { mfaAuthRoutes, mfaRoutes } from '../modules/mfa/index.js';
 import { passkeyRoutes } from '../modules/passkey/index.js';
 import { userRoutes } from '../modules/user/index.js';
 
@@ -12,6 +14,9 @@ const modules: ModuleDefinition[] = [
   { plugin: userRoutes, prefix: '/api/users' },
   { plugin: authRoutes, prefix: '/api/auth' },
   { plugin: passkeyRoutes, prefix: '/api/auth/passkeys' },
+  { plugin: accountRoutes, prefix: '/api/account' },
+  { plugin: mfaRoutes, prefix: '/api/account/mfa' },
+  { plugin: mfaAuthRoutes, prefix: '/api/auth/mfa' },
 ];
 
 export async function registerModules(app: FastifyInstance) {
