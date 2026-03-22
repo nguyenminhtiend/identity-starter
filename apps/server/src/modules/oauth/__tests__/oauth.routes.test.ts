@@ -15,6 +15,8 @@ import {
 
 const mocks = vi.hoisted(() => ({
   authorize: vi.fn(),
+  authorizeWithPar: vi.fn(),
+  createParRequest: vi.fn(),
   submitConsent: vi.fn(),
   exchangeToken: vi.fn(),
   revokeToken: vi.fn(),
@@ -32,12 +34,15 @@ vi.mock('../../../core/env.js', () => ({
     REFRESH_TOKEN_TTL_SECONDS: 2_592_000,
     AUTH_CODE_TTL_SECONDS: 600,
     REFRESH_GRACE_PERIOD_SECONDS: 10,
+    PAR_TTL_SECONDS: 60,
   },
 }));
 
 vi.mock('../oauth.service.js', () => ({
   createOAuthService: vi.fn(() => ({
     authorize: mocks.authorize,
+    authorizeWithPar: mocks.authorizeWithPar,
+    createParRequest: mocks.createParRequest,
     submitConsent: mocks.submitConsent,
     exchangeToken: mocks.exchangeToken,
     revokeToken: mocks.revokeToken,
@@ -100,6 +105,8 @@ describe('oauth routes', () => {
 
   beforeEach(() => {
     mocks.authorize.mockReset();
+    mocks.authorizeWithPar.mockReset();
+    mocks.createParRequest.mockReset();
     mocks.submitConsent.mockReset();
     mocks.exchangeToken.mockReset();
     mocks.revokeToken.mockReset();
@@ -162,6 +169,92 @@ describe('oauth routes', () => {
 
       expect(response.statusCode).toBe(302);
       expect(response.headers.location).toBe('https://example.com/callback?code=abc&state=s');
+    });
+
+    it('uses authorizeWithPar when request_uri is present', async () => {
+      const requestUri = 'urn:ietf:params:oauth:request_uri:xyz';
+      const clientId = 'par-client';
+      mocks.authorizeWithPar.mockResolvedValue({
+        type: 'redirect',
+        redirectUri: 'https://example.com/callback?code=par',
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/oauth/authorize',
+        headers: sessionHeaders,
+        query: { request_uri: requestUri, client_id: clientId },
+      });
+
+      expect(response.statusCode).toBe(302);
+      expect(mocks.authorizeWithPar).toHaveBeenCalledWith(mockSession.userId, requestUri, clientId);
+      expect(mocks.authorize).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /oauth/par', () => {
+    const parBody = {
+      response_type: 'code' as const,
+      client_id: 'cid-1',
+      client_secret: 'secret',
+      redirect_uri: 'https://example.com/callback',
+      scope: 'openid',
+      code_challenge: 'a'.repeat(43),
+      code_challenge_method: 'S256' as const,
+    };
+
+    it('returns 401 when client is not authenticated', async () => {
+      mocks.authenticateClient.mockResolvedValue(null);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/par',
+        headers: { 'content-type': 'application/json' },
+        payload: parBody,
+      });
+
+      expect(response.statusCode).toBe(401);
+      expect(mocks.createParRequest).not.toHaveBeenCalled();
+    });
+
+    it('returns 201 with request_uri when client authenticates', async () => {
+      mocks.authenticateClient.mockResolvedValue({
+        id: '00000000-0000-7000-8000-000000000099',
+        clientId: 'cid-1',
+        clientName: 'P',
+        description: null,
+        redirectUris: ['https://example.com/callback'],
+        grantTypes: ['authorization_code', 'refresh_token'],
+        responseTypes: ['code'],
+        scope: 'openid profile',
+        tokenEndpointAuthMethod: 'client_secret_basic',
+        isConfidential: true,
+        logoUri: null,
+        tosUri: null,
+        policyUri: null,
+        applicationType: 'web',
+        status: 'active',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      mocks.createParRequest.mockResolvedValue({
+        request_uri: 'urn:ietf:params:oauth:request_uri:test',
+        expires_in: 60,
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/par',
+        headers: { 'content-type': 'application/json' },
+        payload: parBody,
+      });
+
+      expect(response.statusCode).toBe(201);
+      expect(JSON.parse(response.body)).toEqual({
+        request_uri: 'urn:ietf:params:oauth:request_uri:test',
+        expires_in: 60,
+      });
+      expect(mocks.createParRequest).toHaveBeenCalled();
     });
   });
 

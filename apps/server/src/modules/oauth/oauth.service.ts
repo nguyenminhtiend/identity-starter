@@ -32,11 +32,13 @@ import type {
   AuthorizeQueryInput,
   ConsentInput,
   IntrospectResponse,
+  ParRequestBody,
   RevokeInput,
   TokenRequestInput,
   TokenResponse,
   UserinfoResponse,
 } from './oauth.schemas.js';
+import { consumeParRequest, createParRequest, type ParRequestParams } from './par.service.js';
 
 export type AuthorizeResult =
   | {
@@ -64,6 +66,7 @@ export interface OAuthServiceEnv {
   refreshTokenTtl: number;
   authCodeTtl: number;
   refreshGracePeriod: number;
+  parTtl: number;
 }
 
 export interface OAuthServiceDeps {
@@ -299,6 +302,57 @@ async function authorize(
   });
 
   return { type: 'redirect', redirectUri };
+}
+
+async function createParRequestFlow(
+  deps: OAuthServiceDeps,
+  client: ClientResponse,
+  body: ParRequestBody,
+): Promise<{ request_uri: string; expires_in: number }> {
+  if (body.client_id !== client.clientId) {
+    throw new UnauthorizedError('Invalid client');
+  }
+
+  if (client.status === 'suspended') {
+    throw new ForbiddenError('Client is suspended');
+  }
+
+  assertClientAllowsAuthCode(client);
+  assertRedirectUri(client, body.redirect_uri);
+  assertRequestedScope(client, body.scope);
+
+  const params: ParRequestParams = {
+    response_type: 'code',
+    redirect_uri: body.redirect_uri,
+    scope: body.scope,
+    code_challenge: body.code_challenge,
+    code_challenge_method: body.code_challenge_method,
+    state: body.state,
+    nonce: body.nonce,
+  };
+
+  return createParRequest(deps.db, client.id, params, deps.env.parTtl);
+}
+
+async function authorizeWithPar(
+  deps: OAuthServiceDeps,
+  userId: string,
+  requestUri: string,
+  clientId: string,
+): Promise<AuthorizeResult> {
+  const client = await getClientByClientId(deps.db, clientId);
+  const params = await consumeParRequest(deps.db, requestUri, client.id);
+  const query: AuthorizeQueryInput = {
+    response_type: 'code',
+    client_id: clientId,
+    redirect_uri: params.redirect_uri,
+    scope: params.scope,
+    state: params.state ?? '',
+    code_challenge: params.code_challenge,
+    code_challenge_method: params.code_challenge_method as 'S256',
+    nonce: params.nonce,
+  };
+  return authorize(deps, userId, query);
 }
 
 async function submitConsent(
@@ -857,6 +911,10 @@ async function getUserInfo(
 export function createOAuthService(deps: OAuthServiceDeps) {
   return {
     authorize: (userId: string, query: AuthorizeQueryInput) => authorize(deps, userId, query),
+    authorizeWithPar: (userId: string, requestUri: string, clientId: string) =>
+      authorizeWithPar(deps, userId, requestUri, clientId),
+    createParRequest: (client: ClientResponse, body: ParRequestBody) =>
+      createParRequestFlow(deps, client, body),
     submitConsent: (userId: string, input: ConsentInput) => submitConsent(deps, userId, input),
     exchangeToken: (request: TokenRequestInput, authenticatedClient: ClientResponse | null) =>
       exchangeToken(deps, request, authenticatedClient),

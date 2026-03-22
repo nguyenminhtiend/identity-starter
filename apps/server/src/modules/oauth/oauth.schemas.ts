@@ -1,17 +1,48 @@
 import { z } from 'zod';
 
-export const authorizeQuerySchema = z.object({
+export const authorizeQueryStandardSchema = z.object({
   response_type: z.literal('code'),
   client_id: z.string().min(1),
   redirect_uri: z.string().min(1),
   scope: z.string().min(1),
-  state: z.string().min(1),
+  state: z.string(),
   code_challenge: z.string().min(43).max(128),
   code_challenge_method: z.literal('S256'),
   nonce: z.string().optional(),
 });
 
-export type AuthorizeQueryInput = z.infer<typeof authorizeQuerySchema>;
+export type AuthorizeQueryInput = z.infer<typeof authorizeQueryStandardSchema>;
+
+export const authorizeQueryParSchema = z.object({
+  request_uri: z.string().min(1),
+  client_id: z.string().min(1),
+});
+
+export type AuthorizeQueryParInput = z.infer<typeof authorizeQueryParSchema>;
+
+export const authorizeQuerySchema = z.union([
+  authorizeQueryStandardSchema,
+  authorizeQueryParSchema,
+]);
+
+export const parRequestSchema = z.object({
+  response_type: z.literal('code'),
+  client_id: z.string().min(1),
+  redirect_uri: z.string().min(1),
+  scope: z.string().min(1),
+  code_challenge: z.string().min(43).max(128),
+  code_challenge_method: z.literal('S256'),
+  state: z.string().optional(),
+  nonce: z.string().optional(),
+  client_secret: z.string().optional(),
+});
+
+export type ParRequestBody = z.infer<typeof parRequestSchema>;
+
+export const parResponseSchema = z.object({
+  request_uri: z.string(),
+  expires_in: z.number(),
+});
 
 export const authorizeConsentRequiredResponseSchema = z.object({
   type: z.literal('consent_required'),

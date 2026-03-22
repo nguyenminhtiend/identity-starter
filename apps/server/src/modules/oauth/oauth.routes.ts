@@ -15,6 +15,8 @@ import {
   consentSchema,
   introspectRequestSchema,
   introspectResponseSchema,
+  parRequestSchema,
+  parResponseSchema,
   revokeBodySchema,
   tokenRequestSchema,
   tokenResponseSchema,
@@ -86,6 +88,7 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       refreshTokenTtl: env.REFRESH_TOKEN_TTL_SECONDS,
       authCodeTtl: env.AUTH_CODE_TTL_SECONDS,
       refreshGracePeriod: env.REFRESH_GRACE_PERIOD_SECONDS,
+      parTtl: env.PAR_TTL_SECONDS,
     },
   });
 
@@ -98,7 +101,11 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (request, reply) => {
-      const result = await oauthService.authorize(request.userId, request.query);
+      const q = request.query;
+      const result =
+        'request_uri' in q && q.request_uri !== ''
+          ? await oauthService.authorizeWithPar(request.userId, q.request_uri, q.client_id)
+          : await oauthService.authorize(request.userId, q);
       if (result.type === 'redirect') {
         return reply.redirect(result.redirectUri, 302);
       }
@@ -109,6 +116,25 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
         state: result.state,
         redirectUri: result.redirectUri,
       });
+    },
+  );
+
+  fastify.post(
+    '/par',
+    {
+      onRequest: [setOAuthTokenEndpointCors],
+      schema: {
+        body: parRequestSchema,
+        response: { 201: parResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const authenticatedClient = await resolveAuthenticatedClient(db, request, request.body);
+      if (!authenticatedClient) {
+        throw new UnauthorizedError('Client authentication required');
+      }
+      const result = await oauthService.createParRequest(authenticatedClient, request.body);
+      return reply.status(201).send(result);
     },
   );
 

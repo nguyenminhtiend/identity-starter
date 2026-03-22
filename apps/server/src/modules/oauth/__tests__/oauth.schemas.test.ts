@@ -71,6 +71,28 @@ describe('authorizeQuerySchema', () => {
       expect(result.data).not.toHaveProperty('extra');
     }
   });
+
+  it('accepts PAR authorize query with request_uri and client_id only', () => {
+    const result = authorizeQuerySchema.safeParse({
+      request_uri: 'urn:ietf:params:oauth:request_uri:abc',
+      client_id: 'client-par',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toEqual({
+        request_uri: 'urn:ietf:params:oauth:request_uri:abc',
+        client_id: 'client-par',
+      });
+    }
+  });
+
+  it('rejects PAR query with empty request_uri', () => {
+    const result = authorizeQuerySchema.safeParse({
+      request_uri: '',
+      client_id: 'c',
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe('tokenRequestSchema', () => {

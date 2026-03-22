@@ -129,6 +129,7 @@ describe('oauth.service', () => {
     refreshTokenTtl: 86_400,
     authCodeTtl: 600,
     refreshGracePeriod: 10,
+    parTtl: 60,
   };
 
   beforeEach(() => {

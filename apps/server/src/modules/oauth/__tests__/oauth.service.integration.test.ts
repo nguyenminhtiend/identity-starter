@@ -37,6 +37,7 @@ describe('oauth.service integration', () => {
       refreshTokenTtl: 7200,
       authCodeTtl: 600,
       refreshGracePeriod: 10,
+      parTtl: 60,
     };
 
     const oauth = createOAuthService({
@@ -172,6 +173,7 @@ describe('oauth.service integration', () => {
         refreshTokenTtl: 7200,
         authCodeTtl: 600,
         refreshGracePeriod: 10,
+        parTtl: 60,
       },
     });
 
@@ -195,6 +197,7 @@ describe('oauth.service integration', () => {
         refreshTokenTtl: 7200,
         authCodeTtl: 600,
         refreshGracePeriod: 10,
+        parTtl: 60,
       },
     });
 
