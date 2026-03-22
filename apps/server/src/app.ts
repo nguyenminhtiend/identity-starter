@@ -16,7 +16,7 @@ import { authPlugin } from './core/plugins/auth.js';
 import { errorHandlerPlugin } from './core/plugins/error-handler.js';
 import { rbacPlugin } from './core/plugins/rbac.js';
 import { registerAuditListener } from './modules/audit/audit.listener.js';
-import { seedSystemRoles } from './modules/rbac/rbac.service.js';
+import { backfillAdminRoles, seedSystemRoles } from './modules/rbac/rbac.service.js';
 import { validateSession } from './modules/session/session.service.js';
 
 export interface AppOptions {
@@ -55,6 +55,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await registerModules(app);
 
   await seedSystemRoles(options.container.db);
+  await backfillAdminRoles(options.container.db);
   registerAuditListener(options.container.db, options.container.eventBus);
 
   return app;

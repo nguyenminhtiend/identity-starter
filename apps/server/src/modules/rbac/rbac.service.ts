@@ -1,6 +1,6 @@
 import { ConflictError, NotFoundError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
-import { permissions, rolePermissions, roles, userRoles } from '@identity-starter/db';
+import { permissions, rolePermissions, roles, userRoles, users } from '@identity-starter/db';
 import { and, count, eq, inArray } from 'drizzle-orm';
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import { RBAC_EVENTS } from './rbac.events.js';
@@ -233,5 +233,26 @@ export async function seedSystemRoles(db: Database): Promise<void> {
           .onConflictDoNothing();
       }
     }
+  }
+}
+
+export async function backfillAdminRoles(db: Database): Promise<void> {
+  const [adminRole] = await db
+    .select({ id: roles.id })
+    .from(roles)
+    .where(eq(roles.name, 'admin'))
+    .limit(1);
+
+  if (!adminRole) {
+    return;
+  }
+
+  const adminUsers = await db.select({ id: users.id }).from(users).where(eq(users.isAdmin, true));
+
+  for (const user of adminUsers) {
+    await db
+      .insert(userRoles)
+      .values({ userId: user.id, roleId: adminRole.id })
+      .onConflictDoNothing();
   }
 }
