@@ -9,6 +9,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "@fontsource-variable/outfit": "^5.2.8",
+    "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
     "@identity-starter/ui": "workspace:*",
     "next": "16.2.1",
     "react": "19.2.4",
