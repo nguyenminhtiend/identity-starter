@@ -175,6 +175,9 @@ importers:
 
   e2e:
     devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
       jose:
         specifier: ^6.2.2
         version: 6.2.2
