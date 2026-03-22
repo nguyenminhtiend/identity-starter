@@ -26,6 +26,7 @@ export const passkeys = pgTable('passkeys', {
   backedUp: boolean('backed_up').notNull().default(false),
   transports: text('transports').array(),
   name: text('name'),
+  aaguid: text('aaguid'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
