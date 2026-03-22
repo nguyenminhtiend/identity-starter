@@ -13,6 +13,21 @@ export const authorizeQuerySchema = z.object({
 
 export type AuthorizeQueryInput = z.infer<typeof authorizeQuerySchema>;
 
+export const authorizeConsentRequiredResponseSchema = z.object({
+  type: z.literal('consent_required'),
+  client: z.object({
+    clientId: z.string(),
+    clientName: z.string(),
+    scope: z.string(),
+    logoUri: z.string().nullable(),
+    policyUri: z.string().nullable(),
+    tosUri: z.string().nullable(),
+  }),
+  requestedScope: z.string(),
+  state: z.string(),
+  redirectUri: z.string(),
+});
+
 const authCodeTokenSchema = z.object({
   grant_type: z.literal('authorization_code'),
   code: z.string().min(1),
@@ -69,6 +84,11 @@ export const revokeSchema = z.object({
 });
 
 export type RevokeInput = z.infer<typeof revokeSchema>;
+
+export const revokeBodySchema = revokeSchema.extend({
+  client_id: z.string().optional(),
+  client_secret: z.string().optional(),
+});
 
 export const tokenResponseSchema = z.object({
   access_token: z.string(),

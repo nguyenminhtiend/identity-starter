@@ -1,0 +1,180 @@
+import { UnauthorizedError } from '@identity-starter/core';
+import type { Database } from '@identity-starter/db';
+import type { FastifyRequest } from 'fastify';
+import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import * as jose from 'jose';
+
+import { env } from '../../core/env.js';
+import type { ClientResponse } from '../client/client.schemas.js';
+import { authenticateClient } from '../client/client.service.js';
+import { verifyAccessToken } from '../token/jwt.service.js';
+import { createRefreshTokenService } from '../token/refresh-token.service.js';
+import { createSigningKeyService } from '../token/signing-key.service.js';
+import {
+  authorizeQuerySchema,
+  consentSchema,
+  revokeBodySchema,
+  tokenRequestSchema,
+  tokenResponseSchema,
+  userinfoResponseSchema,
+} from './oauth.schemas.js';
+import { createOAuthService } from './oauth.service.js';
+
+function extractClientCredentials(
+  request: FastifyRequest,
+): { clientId: string; clientSecret: string } | null {
+  const authHeader = request.headers.authorization;
+  if (authHeader?.startsWith('Basic ')) {
+    const decoded = Buffer.from(authHeader.slice(6), 'base64').toString();
+    const colonIndex = decoded.indexOf(':');
+    if (colonIndex !== -1) {
+      return {
+        clientId: decoded.slice(0, colonIndex),
+        clientSecret: decoded.slice(colonIndex + 1),
+      };
+    }
+  }
+  return null;
+}
+
+async function resolveAuthenticatedClient(
+  db: Database,
+  request: FastifyRequest,
+  body: { client_id?: string; client_secret?: string },
+): Promise<ClientResponse | null> {
+  if (request.headers.authorization?.startsWith('Basic ')) {
+    const creds = extractClientCredentials(request);
+    if (creds === null) {
+      return null;
+    }
+    return authenticateClient(db, creds.clientId, creds.clientSecret);
+  }
+  if (body.client_id !== undefined && body.client_secret !== undefined) {
+    return authenticateClient(db, body.client_id, body.client_secret);
+  }
+  return null;
+}
+
+export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
+  const { db, eventBus } = fastify.container;
+
+  const signingKeyService = createSigningKeyService({ db });
+  const refreshTokenService = createRefreshTokenService({ db, eventBus });
+  const oauthService = createOAuthService({
+    db,
+    eventBus,
+    signingKeyService,
+    refreshTokenService,
+    env: {
+      jwtIssuer: env.JWT_ISSUER,
+      accessTokenTtl: env.ACCESS_TOKEN_TTL_SECONDS,
+      refreshTokenTtl: env.REFRESH_TOKEN_TTL_SECONDS,
+      authCodeTtl: env.AUTH_CODE_TTL_SECONDS,
+      refreshGracePeriod: env.REFRESH_GRACE_PERIOD_SECONDS,
+    },
+  });
+
+  fastify.get(
+    '/authorize',
+    {
+      preHandler: fastify.requireSession,
+      schema: {
+        querystring: authorizeQuerySchema,
+      },
+    },
+    async (request, reply) => {
+      const result = await oauthService.authorize(request.userId, request.query);
+      if (result.type === 'redirect') {
+        return reply.redirect(result.redirectUri, 302);
+      }
+      return reply.status(200).send({
+        type: 'consent_required' as const,
+        client: result.client,
+        requestedScope: result.requestedScope,
+        state: result.state,
+        redirectUri: result.redirectUri,
+      });
+    },
+  );
+
+  fastify.post(
+    '/token',
+    {
+      schema: {
+        body: tokenRequestSchema,
+        response: { 200: tokenResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const authenticatedClient = await resolveAuthenticatedClient(db, request, request.body);
+      const tokens = await oauthService.exchangeToken(request.body, authenticatedClient);
+      return reply.status(200).send(tokens);
+    },
+  );
+
+  fastify.post(
+    '/consent',
+    {
+      preHandler: fastify.requireSession,
+      schema: {
+        body: consentSchema,
+      },
+    },
+    async (request, reply) => {
+      const result = await oauthService.submitConsent(request.userId, request.body);
+      return reply.redirect(result.redirectUri, 302);
+    },
+  );
+
+  fastify.post(
+    '/revoke',
+    {
+      schema: {
+        body: revokeBodySchema,
+      },
+    },
+    async (request, reply) => {
+      const { client_id: _cid, client_secret: _cs, ...revokeInput } = request.body;
+      const hasBasic = request.headers.authorization?.startsWith('Basic ') ?? false;
+      const hasPostSecret =
+        request.body.client_id !== undefined && request.body.client_secret !== undefined;
+      if (hasBasic || hasPostSecret) {
+        const client = await resolveAuthenticatedClient(db, request, request.body);
+        if (!client) {
+          throw new UnauthorizedError('Invalid client');
+        }
+      }
+      await oauthService.revokeToken(revokeInput);
+      return reply.status(200).send();
+    },
+  );
+
+  fastify.get(
+    '/userinfo',
+    {
+      schema: {
+        response: { 200: userinfoResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const authHeader = request.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) {
+        throw new UnauthorizedError('Missing or invalid Authorization header');
+      }
+      const token = authHeader.slice(7);
+      const jwks = await signingKeyService.getJwks();
+      const localJwks = jose.createLocalJWKSet(jwks);
+      const result = await verifyAccessToken(localJwks, token, env.JWT_ISSUER);
+      if (!result) {
+        throw new UnauthorizedError('Invalid access token');
+      }
+      const sub = result.payload.sub;
+      const scope = typeof result.payload.scope === 'string' ? result.payload.scope : '';
+      if (sub === undefined || sub === '') {
+        throw new UnauthorizedError('Invalid access token');
+      }
+      const userinfo = await oauthService.getUserInfo(sub, scope);
+      return reply.status(200).send(userinfo);
+    },
+  );
+};
