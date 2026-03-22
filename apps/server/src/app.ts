@@ -46,7 +46,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     parseOptions: {},
   });
 
-  if (env.NODE_ENV !== 'test') {
+  if (env.NODE_ENV !== 'test' && env.RATE_LIMIT_ENABLED) {
     await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
   }
   await app.register(containerPlugin, { container: options.container });

@@ -173,6 +173,21 @@ importers:
         specifier: ^5
         version: 5.9.3
 
+  e2e:
+    devDependencies:
+      '@types/node':
+        specifier: ^25.5.0
+        version: 25.5.0
+      jose:
+        specifier: ^6.2.2
+        version: 6.2.2
+      otpauth:
+        specifier: ^9.5.0
+        version: 9.5.0
+      vitest:
+        specifier: ^4.1.0
+        version: 4.1.0(@types/node@25.5.0)(vite@7.3.1(@types/node@25.5.0)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.21.0)(yaml@2.8.2))
+
   packages/core:
     devDependencies:
       typescript:
@@ -188,6 +203,9 @@ importers:
         specifier: ^3.4.8
         version: 3.4.8
     devDependencies:
+      '@node-rs/argon2':
+        specifier: ^2.0.2
+        version: 2.0.2
       '@types/node':
         specifier: ^25.5.0
         version: 25.5.0

@@ -21,6 +21,10 @@ const EnvSchema = z.object({
   PAR_TTL_SECONDS: z.coerce.number().default(60),
   DPOP_NONCE_TTL_SECONDS: z.coerce.number().default(300),
   TOTP_ENCRYPTION_KEY: z.string().length(64).optional(),
+  RATE_LIMIT_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
 });
 
 export const env = EnvSchema.parse(process.env);
