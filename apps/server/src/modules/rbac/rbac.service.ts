@@ -27,11 +27,7 @@ const ADMIN_ROLE_PERMISSIONS = [
   { resource: 'audit', action: 'read' },
 ] as const;
 
-export async function createRole(
-  db: Database,
-  eventBus: EventBus,
-  input: CreateRoleInput,
-): Promise<{ id: string; name: string }> {
+export async function createRole(db: Database, eventBus: EventBus, input: CreateRoleInput) {
   try {
     const [row] = await db
       .insert(roles)
@@ -40,7 +36,7 @@ export async function createRole(
         description: input.description ?? null,
         isSystem: false,
       })
-      .returning({ id: roles.id, name: roles.name });
+      .returning();
 
     await eventBus.publish(
       createDomainEvent(RBAC_EVENTS.ROLE_CREATED, { roleId: row.id, name: row.name }),
