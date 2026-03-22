@@ -1,3 +1,4 @@
+export * from './dpop.service.js';
 export * from './jwt.service.js';
 export * from './refresh-token.service.js';
 export * from './signing-key.service.js';
