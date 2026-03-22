@@ -1,3 +1,4 @@
+import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
 import formbody from '@fastify/formbody';
 import helmet from '@fastify/helmet';
@@ -39,6 +40,10 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   });
   await app.register(helmet);
   await app.register(formbody);
+  await app.register(cookie, {
+    secret: env.COOKIE_SECRET,
+    parseOptions: {},
+  });
 
   if (env.NODE_ENV !== 'test') {
     await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });

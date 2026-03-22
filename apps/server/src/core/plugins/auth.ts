@@ -1,6 +1,6 @@
 import { UnauthorizedError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
-import type { FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 
 export interface SessionLike {
@@ -32,12 +32,19 @@ export const authPlugin = fp(async (fastify, opts: AuthPluginOptions) => {
   fastify.decorateRequest('userId', '');
 
   fastify.decorate('requireSession', async (request: FastifyRequest) => {
+    let rawToken: string | undefined;
+
     const authHeader = request.headers.authorization;
-    if (!authHeader?.startsWith('Bearer ')) {
-      throw new UnauthorizedError('Missing or invalid Authorization header');
+    if (authHeader?.startsWith('Bearer ')) {
+      rawToken = authHeader.slice(7);
+    } else if (request.cookies?.session) {
+      rawToken = request.cookies.session;
     }
 
-    const rawToken = authHeader.slice(7);
+    if (!rawToken) {
+      throw new UnauthorizedError('Missing or invalid authentication credentials');
+    }
+
     const session = await opts.validateSession(db, rawToken);
     if (!session) {
       throw new UnauthorizedError('Invalid or expired session');
@@ -47,3 +54,22 @@ export const authPlugin = fp(async (fastify, opts: AuthPluginOptions) => {
     request.userId = session.userId;
   });
 });
+
+export function setSessionCookie(reply: FastifyReply, token: string, maxAge: number): void {
+  reply.setCookie('session', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge,
+  });
+}
+
+export function clearSessionCookie(reply: FastifyReply): void {
+  reply.clearCookie('session', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+  });
+}

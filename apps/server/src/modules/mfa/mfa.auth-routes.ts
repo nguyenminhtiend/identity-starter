@@ -1,4 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import { env } from '../../core/env.js';
+import { setSessionCookie } from '../../core/plugins/auth.js';
 import { mfaVerifyResponseSchema, mfaVerifySchema } from './mfa.schemas.js';
 import { createMfaService } from './mfa.service.js';
 
@@ -15,11 +17,13 @@ export const mfaAuthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
       config: { rateLimit: { max: 10, timeWindow: '15 minutes' } },
     },
-    async (request) => {
-      return mfaService.verifyMfaChallenge(request.body, {
+    async (request, reply) => {
+      const result = await mfaService.verifyMfaChallenge(request.body, {
         ipAddress: request.ip,
         userAgent: request.headers['user-agent'],
       });
+      setSessionCookie(reply, result.token, env.SESSION_TTL_SECONDS);
+      return reply.send(result);
     },
   );
 };

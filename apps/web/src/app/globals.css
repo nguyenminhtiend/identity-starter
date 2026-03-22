@@ -1,0 +1,29 @@
+@import "@fontsource-variable/outfit";
+@import "@fontsource-variable/plus-jakarta-sans";
+@import "tailwindcss";
+@source "../../../../packages/ui/src";
+
+:root {
+  --font-sans: "Plus Jakarta Sans Variable", system-ui, sans-serif;
+  --font-display: "Outfit Variable", system-ui, sans-serif;
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme {
+  --font-sans: "Plus Jakarta Sans Variable", system-ui, sans-serif;
+  --font-display: "Outfit Variable", system-ui, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}

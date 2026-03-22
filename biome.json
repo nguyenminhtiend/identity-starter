@@ -3,5 +3,10 @@
   "extends": ["./packages/config/biome.json"],
   "files": {
     "includes": ["!**/node_modules", "!**/dist", "!**/.turbo", "!**/drizzle"]
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
   }
 }
