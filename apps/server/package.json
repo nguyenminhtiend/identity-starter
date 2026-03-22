@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsup",
     "build:check": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
     "dev": "tsx watch --env-file .env src/server.ts",
     "start": "node dist/server.js",
     "test": "vitest run",
