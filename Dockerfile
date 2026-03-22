@@ -70,6 +70,10 @@ RUN chown -R appuser:appgroup /app
 
 USER appuser
 
+# Ensure external packages bundled by tsup are resolvable from the server
+# (pnpm symlinks are lost during COPY, so postgres needs an explicit link)
+RUN ln -s /app/packages/db/node_modules/postgres /app/apps/server/node_modules/postgres
+
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOST=0.0.0.0
