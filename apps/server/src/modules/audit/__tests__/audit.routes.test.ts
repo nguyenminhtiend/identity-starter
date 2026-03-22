@@ -10,11 +10,13 @@ import { makeSession } from '../../session/__tests__/session.factory.js';
 const mocks = vi.hoisted(() => ({
   queryAuditLogs: vi.fn(),
   exportAuditLogs: vi.fn(),
+  verifyAuditChain: vi.fn(),
 }));
 
 vi.mock('../audit.service.js', () => ({
   queryAuditLogs: mocks.queryAuditLogs,
   exportAuditLogs: mocks.exportAuditLogs,
+  verifyAuditChain: mocks.verifyAuditChain,
 }));
 
 import { auditRoutes } from '../audit.routes.js';
@@ -58,6 +60,7 @@ describe('audit routes', () => {
   beforeEach(() => {
     mocks.queryAuditLogs.mockReset();
     mocks.exportAuditLogs.mockReset();
+    mocks.verifyAuditChain.mockReset();
   });
 
   const authHeaders = { authorization: 'Bearer test-token' };
@@ -150,6 +153,50 @@ describe('audit routes', () => {
       });
 
       expect(response.statusCode).toBe(200);
+    });
+  });
+
+  describe('GET /api/admin/audit-logs/verify', () => {
+    it('returns 200 with chain verification result', async () => {
+      mocks.verifyAuditChain.mockResolvedValue({
+        valid: true,
+        totalEntries: 10,
+        checkedEntries: 10,
+        firstInvalidEntryId: null,
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/admin/audit-logs/verify',
+        headers: authHeaders,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body.valid).toBe(true);
+      expect(body.totalEntries).toBe(10);
+      expect(body.checkedEntries).toBe(10);
+      expect(body.firstInvalidEntryId).toBeNull();
+    });
+
+    it('returns invalid chain result', async () => {
+      mocks.verifyAuditChain.mockResolvedValue({
+        valid: false,
+        totalEntries: 5,
+        checkedEntries: 3,
+        firstInvalidEntryId: '550e8400-e29b-41d4-a716-446655440099',
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/api/admin/audit-logs/verify',
+        headers: authHeaders,
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      expect(body.valid).toBe(false);
+      expect(body.firstInvalidEntryId).toBe('550e8400-e29b-41d4-a716-446655440099');
     });
   });
 });

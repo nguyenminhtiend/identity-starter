@@ -6,4 +6,5 @@ export {
   createAuditLog,
   exportAuditLogs,
   queryAuditLogs,
+  verifyAuditChain,
 } from './audit.service.js';

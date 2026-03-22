@@ -95,6 +95,48 @@ export async function exportAuditLogs(db: Database, query: AuditExportQuery) {
   return db.select().from(auditLogs).where(where).orderBy(asc(auditLogs.createdAt));
 }
 
+export async function verifyAuditChain(db: Database): Promise<{
+  valid: boolean;
+  totalEntries: number;
+  checkedEntries: number;
+  firstInvalidEntryId: string | null;
+}> {
+  const entries = await db.select().from(auditLogs).orderBy(asc(auditLogs.createdAt));
+
+  if (entries.length === 0) {
+    return { valid: true, totalEntries: 0, checkedEntries: 0, firstInvalidEntryId: null };
+  }
+
+  if (entries[0].prevHash !== null) {
+    return {
+      valid: false,
+      totalEntries: entries.length,
+      checkedEntries: 1,
+      firstInvalidEntryId: entries[0].id,
+    };
+  }
+
+  for (let i = 1; i < entries.length; i++) {
+    const prev = entries[i - 1];
+    const expectedHash = computeHash(prev.id, prev.action, prev.createdAt);
+    if (entries[i].prevHash !== expectedHash) {
+      return {
+        valid: false,
+        totalEntries: entries.length,
+        checkedEntries: i + 1,
+        firstInvalidEntryId: entries[i].id,
+      };
+    }
+  }
+
+  return {
+    valid: true,
+    totalEntries: entries.length,
+    checkedEntries: entries.length,
+    firstInvalidEntryId: null,
+  };
+}
+
 export async function anonymizeActorInAuditLogs(db: Database, actorId: string): Promise<void> {
   await db.update(auditLogs).set({ actorId: null }).where(eq(auditLogs.actorId, actorId));
 }

@@ -44,6 +44,13 @@ export const auditExportQuerySchema = z.object({
 
 export type AuditExportQuery = z.infer<typeof auditExportQuerySchema>;
 
+export const auditChainVerificationResponseSchema = z.object({
+  valid: z.boolean(),
+  totalEntries: z.number(),
+  checkedEntries: z.number(),
+  firstInvalidEntryId: z.uuid().nullable(),
+});
+
 export interface CreateAuditLogInput {
   actorId?: string | null;
   action: string;

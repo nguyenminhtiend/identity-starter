@@ -1,8 +1,14 @@
 import { createHash } from 'node:crypto';
 import { auditLogs } from '@identity-starter/db';
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb, type TestDb } from '../../../test/db-helper.js';
-import { createAuditLog, exportAuditLogs, queryAuditLogs } from '../audit.service.js';
+import {
+  createAuditLog,
+  exportAuditLogs,
+  queryAuditLogs,
+  verifyAuditChain,
+} from '../audit.service.js';
 import { makeCreateAuditLogInput } from './audit.factory.js';
 
 function computeHash(id: string, action: string, createdAt: Date): string {
@@ -201,5 +207,50 @@ describe('exportAuditLogs', () => {
     for (const row of rows) {
       expect(row.actorId).toBe(actorId);
     }
+  });
+});
+
+describe('verifyAuditChain', () => {
+  it('returns valid for intact chain', async () => {
+    for (let i = 0; i < 5; i++) {
+      await createAuditLog(
+        testDb.db,
+        makeCreateAuditLogInput({ action: `test.verify_valid_${i}` }),
+      );
+    }
+
+    const result = await verifyAuditChain(testDb.db);
+    expect(result.valid).toBe(true);
+    expect(result.totalEntries).toBeGreaterThan(0);
+    expect(result.checkedEntries).toBe(result.totalEntries);
+    expect(result.firstInvalidEntryId).toBeNull();
+  });
+
+  it('detects corrupted hash', async () => {
+    for (let i = 0; i < 5; i++) {
+      await createAuditLog(
+        testDb.db,
+        makeCreateAuditLogInput({ action: `test.verify_corrupt_${i}` }),
+      );
+    }
+
+    const entries = await exportAuditLogs(testDb.db, {});
+    expect(entries.length).toBeGreaterThanOrEqual(2);
+
+    const corruptTarget = entries[1];
+    await testDb.db
+      .update(auditLogs)
+      .set({ prevHash: 'corrupted_hash_value_that_should_fail_validation' })
+      .where(eq(auditLogs.id, corruptTarget.id));
+
+    const result = await verifyAuditChain(testDb.db);
+    expect(result.valid).toBe(false);
+    expect(result.firstInvalidEntryId).toBe(corruptTarget.id);
+
+    const expectedHash = computeHash(entries[0].id, entries[0].action, entries[0].createdAt);
+    await testDb.db
+      .update(auditLogs)
+      .set({ prevHash: expectedHash })
+      .where(eq(auditLogs.id, corruptTarget.id));
   });
 });
