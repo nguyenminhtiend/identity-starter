@@ -58,6 +58,10 @@ run = "pnpm --filter @identity-starter/web e2e"
 description = "Run database migrations"
 run = "pnpm db:migrate"
 
+[tasks."db:seed"]
+description = "Seed database (roles, permissions, admin user)"
+run = "pnpm db:seed"
+
 [tasks."db:generate"]
 description = "Generate migrations from schema changes"
 run = "pnpm db:generate"

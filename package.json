@@ -14,6 +14,12 @@
     "dev:all": "turbo run dev",
     "db:generate": "pnpm --filter @identity-starter/db generate",
     "db:migrate": "pnpm --filter @identity-starter/db migrate",
+    "db:migrate:status": "pnpm --filter @identity-starter/db migrate:status",
+    "db:migrate:reset": "pnpm --filter @identity-starter/db migrate:reset",
+    "db:push": "pnpm --filter @identity-starter/db push",
+    "db:studio": "pnpm --filter @identity-starter/db studio",
+    "db:check": "pnpm --filter @identity-starter/db check",
+    "db:seed": "pnpm --filter @identity-starter/db seed",
     "test:e2e": "./scripts/e2e.sh"
   },
   "devDependencies": {
