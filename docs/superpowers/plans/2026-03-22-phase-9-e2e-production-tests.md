@@ -14,6 +14,8 @@
 
 | File | Action | Responsibility |
 |------|--------|---------------|
+| `apps/server/src/core/env.ts` | Modify | Add `RATE_LIMIT_ENABLED` env var |
+| `apps/server/src/app.ts` | Modify | Gate rate-limit registration on env var |
 | `packages/db/package.json` | Modify | Add `@node-rs/argon2` devDependency |
 | `packages/db/src/seed-e2e.ts` | Create | Drizzle seed: admin user + super_admin role |
 | `scripts/seed-e2e.sh` | Create | Shell wrapper for seed in Docker |
@@ -57,7 +59,7 @@ cd packages/db && pnpm add -D @node-rs/argon2
 Create `packages/db/src/seed-e2e.ts`:
 
 ```typescript
-import { hash } from '@node-rs/argon2';
+import { Algorithm, hash } from '@node-rs/argon2';
 import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
@@ -79,8 +81,9 @@ const client = postgres(url, { max: 1 });
 const db = drizzle(client);
 
 const passwordHash = await hash(ADMIN_PASSWORD, {
-  memoryCost: 19456,
-  timeCost: 2,
+  algorithm: Algorithm.Argon2id,
+  memoryCost: 65536,
+  timeCost: 3,
   outputLen: 32,
   parallelism: 1,
 });
@@ -196,12 +199,62 @@ git commit -m "feat(e2e): add Drizzle seed script for E2E admin user"
 
 ---
 
-### Task 2: Docker Compose E2E stack
+### Task 2: Rate limit configuration + Docker Compose E2E stack
+
+Production mode has strict per-route rate limits (register: 5/15min, login: 10/15min, forgot-password: 3/15min). The E2E suite makes ~7 register and ~10 login calls across all workflows — exceeding these limits from the same IP. We add an env var to disable rate limiting for E2E.
 
 **Files:**
+- Modify: `apps/server/src/core/env.ts`
+- Modify: `apps/server/src/app.ts`
 - Create: `docker-compose.e2e.yml`
 
-- [ ] **Step 1: Create docker-compose.e2e.yml**
+- [ ] **Step 1: Add RATE_LIMIT_ENABLED env var**
+
+In `apps/server/src/core/env.ts`, add to the `EnvSchema` object:
+
+```typescript
+RATE_LIMIT_ENABLED: z
+  .enum(['true', 'false'])
+  .default('true')
+  .transform((v) => v === 'true'),
+```
+
+- [ ] **Step 2: Gate rate-limit registration on env var**
+
+In `apps/server/src/app.ts`, replace:
+
+```typescript
+if (env.NODE_ENV !== 'test') {
+  await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
+}
+```
+
+with:
+
+```typescript
+if (env.NODE_ENV !== 'test' && env.RATE_LIMIT_ENABLED) {
+  await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
+}
+```
+
+> When the global rate-limit plugin is not registered, per-route `config: { rateLimit: ... }` options on auth/passkey/mfa routes are silently ignored — they're just metadata that the plugin would read. The OAuth routes register their own local rate-limit instance (`{ global: false }`), but OAuth token limits (60/min) are not a problem for E2E.
+
+- [ ] **Step 3: Verify existing tests still pass**
+
+```bash
+pnpm --filter server test:unit
+```
+
+Expected: All unit tests pass (rate limit tests use their own Fastify instance).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add apps/server/src/core/env.ts apps/server/src/app.ts
+git commit -m "feat(server): make rate limiting configurable via RATE_LIMIT_ENABLED env var"
+```
+
+- [ ] **Step 5: Create docker-compose.e2e.yml**
 
 Create `docker-compose.e2e.yml` at project root:
 
@@ -209,7 +262,7 @@ Create `docker-compose.e2e.yml` at project root:
 # E2E test stack — ephemeral, no persistent volumes
 # Usage: scripts/e2e.sh (automated) or manually:
 #   docker compose -p identity-e2e -f docker-compose.e2e.yml up --build -d --wait
-#   docker compose -p identity-e2e -f docker-compose.e2e.yml run --rm seed
+#   docker compose -p identity-e2e -f docker-compose.e2e.yml --profile seed run --rm seed
 #   pnpm --filter @identity-starter/e2e test
 #   docker compose -p identity-e2e -f docker-compose.e2e.yml down -v
 
@@ -245,6 +298,7 @@ services:
       HOST: "0.0.0.0"
       DATABASE_URL: postgresql://admin:123456@postgres:5432/identity_start_e2e
       LOG_LEVEL: info
+      RATE_LIMIT_ENABLED: "false"
       WEBAUTHN_RP_NAME: Identity Starter E2E
       WEBAUTHN_RP_ID: localhost
       WEBAUTHN_ORIGIN: http://localhost:3001
@@ -282,10 +336,10 @@ services:
 > - Server exposed on port 3001 (avoids conflict with dev on 3000)
 > - `TOTP_ENCRYPTION_KEY` set (required for MFA tests)
 > - `JWT_ISSUER` and `WEBAUTHN_ORIGIN` point to `localhost:3001`
-> - `seed` service in a profile — only runs via `docker compose run`
+> - `seed` service in a profile — only runs via `docker compose --profile seed run --rm seed`
 > - Separate project name (`-p identity-e2e`) used in orchestration script
 
-- [ ] **Step 2: Test the stack starts**
+- [ ] **Step 6: Test the stack starts**
 
 ```bash
 docker compose -p identity-e2e -f docker-compose.e2e.yml up --build -d --wait
@@ -293,15 +347,15 @@ docker compose -p identity-e2e -f docker-compose.e2e.yml up --build -d --wait
 
 Expected: Postgres starts → migrate runs → server starts and passes health check.
 
-- [ ] **Step 3: Test the seed runs**
+- [ ] **Step 7: Test the seed runs**
 
 ```bash
-docker compose -p identity-e2e -f docker-compose.e2e.yml run --rm seed
+docker compose -p identity-e2e -f docker-compose.e2e.yml --profile seed run --rm seed
 ```
 
 Expected: "Seeded admin user: admin@e2e.local (super_admin)" then "Seed complete."
 
-- [ ] **Step 4: Verify server responds**
+- [ ] **Step 8: Verify server responds**
 
 ```bash
 curl http://localhost:3001/health
@@ -309,13 +363,13 @@ curl http://localhost:3001/health
 
 Expected: `{"status":"ok","checks":{"database":"ok"}}`
 
-- [ ] **Step 5: Tear down**
+- [ ] **Step 9: Tear down**
 
 ```bash
 docker compose -p identity-e2e -f docker-compose.e2e.yml down -v
 ```
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
 git add docker-compose.e2e.yml
@@ -488,7 +542,8 @@ async function request<T = unknown>(
   });
 
   let data: T;
-  if (response.status === 204 || response.status === 302) {
+  const is3xx = response.status >= 300 && response.status < 400;
+  if (response.status === 204 || is3xx) {
     data = null as T;
   } else {
     const contentType = response.headers.get('content-type');
@@ -547,7 +602,7 @@ export function uniqueEmail(prefix: string): string {
 - [ ] **Step 4: Verify helpers compile**
 
 ```bash
-cd e2e && npx tsc --noEmit
+cd e2e && pnpm exec tsc --noEmit
 ```
 
 Expected: No errors.
@@ -623,7 +678,7 @@ describe('Health & Discovery', () => {
 ```bash
 # Start stack (if not already running)
 docker compose -p identity-e2e -f docker-compose.e2e.yml up --build -d --wait
-docker compose -p identity-e2e -f docker-compose.e2e.yml run --rm seed
+docker compose -p identity-e2e -f docker-compose.e2e.yml --profile seed run --rm seed
 
 # Run tests
 pnpm --filter @identity-starter/e2e test
@@ -1053,8 +1108,6 @@ describe('Admin Operations', () => {
   });
 
   describe('role management', () => {
-    let customRoleId: string;
-
     it('lists system roles', async () => {
       const res = await api.get<Array<{ id: string; name: string }>>('/api/admin/roles', {
         token: adminToken,
@@ -1078,7 +1131,6 @@ describe('Admin Operations', () => {
 
       expect(res.status).toBe(201);
       expect(res.data.isSystem).toBe(false);
-      customRoleId = res.data.id;
     });
 
     it('assigns role to user', async () => {
@@ -1086,10 +1138,12 @@ describe('Admin Operations', () => {
         token: adminToken,
       });
       const userRole = rolesRes.data.find((r) => r.name === 'user');
-      expect(userRole).toBeDefined();
+      if (!userRole) {
+        throw new Error('user role not found');
+      }
 
       const res = await api.post(`/api/admin/users/${targetUserId}/roles`, {
-        body: { roleId: userRole!.id },
+        body: { roleId: userRole.id },
         token: adminToken,
       });
 
@@ -1101,8 +1155,11 @@ describe('Admin Operations', () => {
         token: adminToken,
       });
       const userRole = rolesRes.data.find((r) => r.name === 'user');
+      if (!userRole) {
+        throw new Error('user role not found');
+      }
 
-      const res = await api.delete(`/api/admin/users/${targetUserId}/roles/${userRole!.id}`, {
+      const res = await api.delete(`/api/admin/users/${targetUserId}/roles/${userRole.id}`, {
         token: adminToken,
       });
 
@@ -1216,8 +1273,10 @@ async function approveConsent(
   });
   expect(res.status).toBe(302);
   const location = res.headers.get('location');
-  expect(location).toBeTruthy();
-  return codeFromLocation(location!);
+  if (!location) {
+    throw new Error('expected Location header from consent');
+  }
+  return codeFromLocation(location);
 }
 
 describe('OAuth2/OIDC Flow', () => {
@@ -1317,7 +1376,7 @@ describe('OAuth2/OIDC Flow', () => {
     expect(userinfoRes.data.sub).toBe(payload.sub);
   });
 
-  it('refresh token rotation: new works, old expires after grace', async () => {
+  it('refresh token rotation: new token issued, old and new both distinct', async () => {
     const { codeVerifier, codeChallenge } = pkcePair();
     const state = `state-rotate-${Date.now()}`;
 
@@ -1358,7 +1417,19 @@ describe('OAuth2/OIDC Flow', () => {
       },
     );
     expect(refreshRes.status).toBe(200);
+    expect(refreshRes.data.access_token).not.toBe(tokenRes.data.access_token);
     expect(refreshRes.data.refresh_token).not.toBe(firstRefresh);
+
+    const secondRefresh = await api.post<{ access_token: string; refresh_token: string }>(
+      '/oauth/token',
+      {
+        body: { grant_type: 'refresh_token', refresh_token: refreshRes.data.refresh_token },
+        headers: { authorization: basicAuth(clientId, clientSecret) },
+      },
+    );
+    expect(secondRefresh.status).toBe(200);
+    expect(secondRefresh.data.access_token).not.toBe(refreshRes.data.access_token);
+    expect(secondRefresh.data.refresh_token).not.toBe(refreshRes.data.refresh_token);
   });
 
   it('PKCE: wrong code_verifier fails token exchange', async () => {
@@ -1651,9 +1722,11 @@ describe('Account Management', () => {
         { token: sessionToken },
       );
       const current = listRes.data.find((s) => s.isCurrent);
-      expect(current).toBeDefined();
+      if (!current) {
+        throw new Error('expected a current session');
+      }
 
-      const res = await api.delete(`/api/account/sessions/${current!.id}`, {
+      const res = await api.delete(`/api/account/sessions/${current.id}`, {
         token: sessionToken,
       });
       expect(res.status).toBe(400);
@@ -1666,7 +1739,7 @@ describe('Account Management', () => {
       );
       const other = listRes.data.find((s) => !s.isCurrent);
       if (!other) {
-        return;
+        throw new Error('expected a non-current session');
       }
 
       const res = await api.delete(`/api/account/sessions/${other.id}`, {
@@ -1754,7 +1827,7 @@ echo "Building and starting stack..."
 docker compose -p "$PROJECT" -f "$COMPOSE_FILE" up --build -d --wait
 
 echo "Seeding test data..."
-docker compose -p "$PROJECT" -f "$COMPOSE_FILE" run --rm seed
+docker compose -p "$PROJECT" -f "$COMPOSE_FILE" --profile seed run --rm seed
 
 echo "Running E2E tests..."
 echo ""
@@ -1769,17 +1842,15 @@ chmod +x scripts/e2e.sh
 ```
 
 > **`trap cleanup EXIT`** ensures teardown runs even on test failure or Ctrl+C. Exit code propagates from `set -e` — if `pnpm test` fails, the script exits with that code after cleanup.
+>
+> **Important:** This script must be run from the repo root (relative `COMPOSE_FILE` path). `pnpm test:e2e` from root handles this automatically.
 
 - [ ] **Step 2: Add test:e2e to root package.json**
 
-In `package.json` (root), add to scripts:
+In `package.json` (root), **merge** into the existing `scripts` object (do NOT replace the whole block):
 
-```json
-{
-  "scripts": {
-    "test:e2e": "./scripts/e2e.sh"
-  }
-}
+```bash
+pnpm pkg set scripts.test:e2e="./scripts/e2e.sh"
 ```
 
 - [ ] **Step 3: Run the full E2E suite end-to-end**
