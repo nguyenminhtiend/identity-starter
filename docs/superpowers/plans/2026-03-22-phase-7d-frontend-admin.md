@@ -2,39 +2,73 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the admin dashboard — user management, role management, session management, and audit log viewer, all protected by RBAC.
+**Goal:** Build the admin dashboard as a **separate Next.js 15 app** (`apps/admin`) — user management, role management, session management, and audit log viewer, all protected by RBAC.
 
-**Architecture:** Admin pages extend the dashboard layout from Plan 7b with admin-specific nav items. Server Components load paginated data with URL search params. TanStack Query mutations for actions (revoke, suspend, role assignment). Admin route guard checks user roles via a profile+roles API call. Tables use shadcn `<Table>` components; add `@tanstack/react-table` later if sorting/column-resize is needed.
+**Architecture:** Standalone admin app with its own scaffold, middleware, and layout. All routes require authentication + admin role — enforced at the middleware level (no public pages). Server Components load paginated data. TanStack Query mutations for admin actions. Separate from `apps/web` for security isolation, independent deployments, and bundle optimization.
 
-**Tech Stack:** Next.js 15, React 19, TanStack Query, shadcn/ui
+**Tech Stack:** Next.js 15, React 19, TanStack Query, shadcn/ui, Tailwind CSS v4
 
-**Prerequisite:** Plan 7b complete (dashboard layout). Phase 6 Admin API available.
+**Prerequisite:** Phase 7-pre complete (`packages/ui` shared package). Phase 7a Task 4 complete (server cookie auth). Phase 6 Admin API available.
 **Phase doc:** `docs/phase-7-frontend.md`
 **API spec:** `docs/phase-6-admin-governance.md`
+**Related plans:** Phase 7-pre (shared UI package), 7a (Foundation + Auth), 7b (Account), 7c (OAuth Consent)
 
-> **BLOCKED:** This plan requires Phase 6 admin routes to be implemented on the server. As of writing, Phase 6 is NOT STARTED. The current server uses a simple `isAdmin` boolean flag (via `apps/server/src/core/plugins/admin.ts`). Phase 6 will replace this with proper RBAC (roles table, permissions, `requirePermission` middleware). **Do not start this plan until Phase 6 routes return 200 for admin users.** If implementing incrementally before full RBAC, the admin layout guard can temporarily check the `isAdmin` flag instead of role names.
+**Design Direction:** Professional, data-dense, efficient. Think Vercel dashboard meets Linear. Dark-theme-first design with a utilitarian color palette — slate/zinc tones with a sharp accent (e.g., electric blue or amber). Distinctive monospace for data displays (e.g., JetBrains Mono, Fira Code). Dense but readable data tables. Crisp, functional — no unnecessary decoration.
+
+**Vercel Best Practices:**
+- `async-parallel`: Parallel fetch of profile + page data in layouts
+- `server-serialization`: Minimize data serialized from Server Components to Client Components
+- `bundle-dynamic-imports`: Lazy-load audit log export functionality
+- `rendering-conditional-render`: Ternary over `&&` for conditional JSX
+- `rerender-no-inline-components`: All components defined at module level
+
+**Why a separate app (industry standard):**
+- **Security isolation** — admin app can enforce stricter auth (always MFA, IP allowlisting in production)
+- **Independent deployments** — ship admin fixes without touching user-facing app
+- **Bundle optimization** — admin doesn't ship WebAuthn browser lib; user app doesn't ship data tables
+- **Network-level access control** — admin app can be restricted to internal network / VPN
 
 ---
 
 ## File Map
 
-- Modify: `apps/web/src/components/account/dashboard-nav.tsx` — add admin nav items
-- Create: `apps/web/src/app/(dashboard)/admin/layout.tsx` — admin route guard
-- Create: `apps/web/src/app/(dashboard)/admin/page.tsx` — overview redirect
-- Create: `apps/web/src/app/(dashboard)/admin/users/page.tsx`
-- Create: `apps/web/src/app/(dashboard)/admin/users/[id]/page.tsx`
-- Create: `apps/web/src/app/(dashboard)/admin/roles/page.tsx`
-- Create: `apps/web/src/app/(dashboard)/admin/sessions/page.tsx`
-- Create: `apps/web/src/app/(dashboard)/admin/audit-logs/page.tsx`
-- Create: `apps/web/src/components/admin/user-table.tsx`
-- Create: `apps/web/src/components/admin/user-detail.tsx`
-- Create: `apps/web/src/components/admin/role-list.tsx`
-- Create: `apps/web/src/components/admin/create-role-dialog.tsx`
-- Create: `apps/web/src/components/admin/session-table.tsx`
-- Create: `apps/web/src/components/admin/audit-log-table.tsx`
-- Create: `apps/web/src/components/admin/pagination.tsx`
-- Create: `apps/web/src/types/admin.ts`
-- Create: `apps/web/e2e/admin.spec.ts`
+### New App (`apps/admin/`)
+
+- Create: `apps/admin/package.json` — depends on `@identity-starter/ui`
+- Create: `apps/admin/next.config.ts` — API rewrites + `transpilePackages`
+- Create: `apps/admin/tsconfig.json` — path aliases pointing shared code to `packages/ui`
+- Create: `apps/admin/postcss.config.mjs`
+- Create: `apps/admin/src/app/layout.tsx` — root layout with providers from packages/ui
+- Create: `apps/admin/src/app/page.tsx` — redirect to /users
+- Create: `apps/admin/src/app/globals.css` — Tailwind v4 entry + `@source` for packages/ui
+- Create: `apps/admin/src/app/login/page.tsx`
+- Create: `apps/admin/src/middleware.ts`
+- Create: `apps/admin/src/lib/env.ts` — validated env config (app-specific)
+- Create: `apps/admin/src/components/layout/admin-sidebar.tsx`
+- Create: `apps/admin/src/app/(dashboard)/layout.tsx`
+- Create: `apps/admin/src/app/(dashboard)/users/page.tsx`
+- Create: `apps/admin/src/app/(dashboard)/users/[id]/page.tsx`
+- Create: `apps/admin/src/app/(dashboard)/roles/page.tsx`
+- Create: `apps/admin/src/app/(dashboard)/sessions/page.tsx`
+- Create: `apps/admin/src/app/(dashboard)/audit-logs/page.tsx`
+- Create: `apps/admin/src/components/users/user-table.tsx`
+- Create: `apps/admin/src/components/users/user-filters.tsx`
+- Create: `apps/admin/src/components/users/user-detail.tsx`
+- Create: `apps/admin/src/components/roles/role-list.tsx`
+- Create: `apps/admin/src/components/roles/create-role-dialog.tsx`
+- Create: `apps/admin/src/components/sessions/session-table.tsx`
+- Create: `apps/admin/src/components/audit/audit-log-table.tsx`
+- Create: `apps/admin/src/components/audit/audit-log-filters.tsx`
+- Create: `apps/admin/src/types/admin.ts`
+- Create: `apps/admin/playwright.config.ts`
+- Create: `apps/admin/e2e/admin.spec.ts`
+
+**Shared code from `packages/ui` (via tsconfig path aliases — no local copies):**
+- `@/components/ui/*` → `packages/ui/src/components/ui/*` (all shadcn components)
+- `@/components/shared/*` → `packages/ui/src/components/shared/*` (LoadingButton, ApiErrorAlert, ConfirmDialog, Pagination)
+- `@/components/providers` → `packages/ui/src/components/providers` (TanStack Query Providers)
+- `@/lib/utils` → `packages/ui/src/lib/utils.ts` (cn helper)
+- `@/lib/api-client` → `packages/ui/src/lib/api-client.ts` (serverFetch, clientFetch, ApiRequestError)
 
 ---
 
@@ -59,14 +93,209 @@
 
 ---
 
-## Task 1: Admin Types + Dependencies
+## Task 1: Scaffold Admin App
 
 **Files:**
-- Create: `apps/web/src/types/admin.ts`
+- Create: `apps/admin/package.json`
+- Create: `apps/admin/next.config.ts`
+- Create: `apps/admin/tsconfig.json`
+- Create: `apps/admin/postcss.config.mjs`
+- Create: `apps/admin/src/app/layout.tsx`
+- Create: `apps/admin/src/app/page.tsx`
+- Create: `apps/admin/src/app/globals.css`
+- Create: `apps/admin/src/lib/env.ts`
+
+- [ ] **Step 1: Create Next.js app**
+
+```bash
+cd apps && pnpm create next-app@latest admin \
+  --typescript \
+  --tailwind \
+  --eslint=false \
+  --app \
+  --src-dir \
+  --import-alias "@/*" \
+  --turbopack
+```
+
+Remove any `.eslintrc*` file (we use Biome).
+
+- [ ] **Step 2: Clean up generated files**
+
+Remove default boilerplate. Delete `public/` SVG files.
+
+Replace `src/app/page.tsx`:
+
+```typescript
+import { redirect } from 'next/navigation';
+
+export default function Home() {
+  redirect('/users');
+}
+```
+
+- [ ] **Step 3: Update package.json**
+
+```json
+{
+  "name": "@identity-starter/admin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3002 --turbopack",
+    "build": "next build",
+    "start": "next start --port 3002",
+    "e2e": "playwright test"
+  }
+}
+```
+
+Note: Port 3002 to avoid conflict with `apps/web` on 3000.
+
+- [ ] **Step 4: Configure next.config.ts with API rewrites**
+
+```typescript
+import type { NextConfig } from 'next';
+
+const nextConfig: NextConfig = {
+  async rewrites() {
+    const apiUrl = process.env.API_URL ?? 'http://localhost:3001';
+    return [
+      { source: '/api/:path*', destination: `${apiUrl}/api/:path*` },
+    ];
+  },
+};
+
+export default nextConfig;
+```
+
+Admin app only needs `/api/*` rewrites — no `/oauth` or `/.well-known` routes.
+
+- [ ] **Step 5: Create env config**
+
+Create `apps/admin/src/lib/env.ts`:
+
+```typescript
+import { z } from 'zod';
+
+const envSchema = z.object({
+  API_URL: z.string().default('http://localhost:3001'),
+  NEXT_PUBLIC_APP_NAME: z.string().default('Identity Admin'),
+});
+
+export const env = envSchema.parse({
+  API_URL: process.env.API_URL,
+  NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
+});
+```
+
+- [ ] **Step 6: Install dependencies**
+
+```bash
+cd apps/admin && pnpm add zod@^4
+```
+
+Note: `clsx`, `tailwind-merge`, `@tanstack/react-query`, and all shadcn component deps come from `@identity-starter/ui` (added in Task 2).
+
+- [ ] **Step 7: Verify build**
+
+```bash
+cd apps/admin && pnpm build
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add -A && git commit -m "feat(admin): scaffold Next.js 15 admin app on port 3002"
+```
+
+---
+
+## Task 2: Configure Shared Package + Path Aliases
+
+**Files:**
+- Modify: `apps/admin/package.json` — add `@identity-starter/ui` dependency
+- Modify: `apps/admin/tsconfig.json` — add path aliases for shared code
+- Modify: `apps/admin/next.config.ts` — add `transpilePackages`
+- Modify: `apps/admin/src/app/globals.css` — add `@source` for shared package
+
+All shadcn components, shared components, API client, and utilities come from `packages/ui` (created in Phase 7-pre). No local copies needed.
+
+- [ ] **Step 1: Add shared package dependency**
+
+```bash
+cd apps/admin && pnpm add @identity-starter/ui@workspace:*
+```
+
+- [ ] **Step 2: Configure tsconfig path aliases**
+
+Update `apps/admin/tsconfig.json` paths — **specific paths must come before the catch-all `@/*`**:
+
+```json
+{
+  "compilerOptions": {
+    "paths": {
+      "@/components/ui/*": ["../../packages/ui/src/components/ui/*"],
+      "@/components/shared/*": ["../../packages/ui/src/components/shared/*"],
+      "@/components/providers": ["../../packages/ui/src/components/providers"],
+      "@/lib/utils": ["../../packages/ui/src/lib/utils"],
+      "@/lib/api-client": ["../../packages/ui/src/lib/api-client"],
+      "@/*": ["./src/*"]
+    }
+  }
+}
+```
+
+This makes `@/components/ui/button` resolve to `packages/ui` while `@/lib/env` and `@/components/layout/*` resolve to local `./src/`.
+
+- [ ] **Step 3: Add transpilePackages to next.config.ts**
+
+Update the existing `next.config.ts` to include:
+
+```typescript
+const nextConfig: NextConfig = {
+  transpilePackages: ['@identity-starter/ui'],
+  async rewrites() {
+    // ... existing rewrites
+  },
+};
+```
+
+- [ ] **Step 4: Add @source for Tailwind scanning**
+
+In `apps/admin/src/app/globals.css`, add after the Tailwind import:
+
+```css
+@import 'tailwindcss';
+@source "../../../../packages/ui/src/**/*.{ts,tsx}";
+```
+
+This tells Tailwind v4 to scan the shared package for class names.
+
+- [ ] **Step 5: Verify shared imports work**
+
+```bash
+cd apps/admin && pnpm build
+```
+
+Expected: Build succeeds with `@/components/ui/*`, `@/lib/utils`, etc. resolving to `packages/ui`.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A && git commit -m "feat(admin): configure shared UI package with path aliases"
+```
+
+---
+
+## Task 3: Admin Types
+
+**Files:**
+- Create: `apps/admin/src/types/admin.ts`
 
 - [ ] **Step 1: Define admin types**
 
-Create `apps/web/src/types/admin.ts`:
+Create `apps/admin/src/types/admin.ts`:
 
 ```typescript
 export interface AdminUser {
@@ -118,12 +347,7 @@ export interface AuditLogEntry {
   prevHash: string | null;
 }
 
-export interface PaginatedResponse<T> {
-  data: T[];
-  total: number;
-  page: number;
-  limit: number;
-}
+// Note: PaginatedResponse<T> comes from @/lib/api-client (shared package)
 
 export interface ChainVerification {
   valid: boolean;
@@ -131,224 +355,387 @@ export interface ChainVerification {
   checkedEntries: number;
   firstInvalidEntryId: string | null;
 }
+
+export interface AdminProfile {
+  id: string;
+  email: string;
+  displayName: string;
+  roles: Array<{ id: string; name: string }>;
+}
 ```
 
 - [ ] **Step 2: Commit**
 
 ```bash
-git add -A && git commit -m "feat(web): add admin dashboard types"
+git add -A && git commit -m "feat(admin): add admin dashboard types"
 ```
 
 ---
 
-## Task 2: Pagination Component
+## Task 4: Middleware + Login Page
 
 **Files:**
-- Create: `apps/web/src/components/admin/pagination.tsx`
+- Create: `apps/admin/src/middleware.ts`
+- Create: `apps/admin/src/app/login/page.tsx`
 
-- [ ] **Step 1: Create pagination component**
+- [ ] **Step 1: Create admin middleware**
 
-Create `apps/web/src/components/admin/pagination.tsx`:
+All routes except `/login` require authentication. The admin role check happens in the dashboard layout (server-side) because middleware can't make async API calls to verify roles.
+
+Create `apps/admin/src/middleware.ts`:
+
+```typescript
+import { NextResponse, type NextRequest } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  const session = request.cookies.get('session');
+
+  // Login page: redirect to dashboard if already logged in
+  if (pathname === '/login') {
+    if (session) {
+      return NextResponse.redirect(new URL('/users', request.url));
+    }
+    return NextResponse.next();
+  }
+
+  // All other pages: require auth
+  if (!session) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ['/((?!_next|api|favicon.ico|.*\\.).*)',],
+};
+```
+
+- [ ] **Step 2: Create admin login page**
+
+Create `apps/admin/src/app/login/page.tsx`:
+
+The admin login page is intentionally simple — just email + password, no registration, no passkeys.
 
 ```tsx
 'use client';
 
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useRouter } from 'next/navigation';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { LoadingButton } from '@/components/shared/loading-button';
+import { ApiErrorAlert } from '@/components/shared/api-error-alert';
+import { clientFetch } from '@/lib/api-client';
 
-interface PaginationProps {
-  page: number;
-  limit: number;
-  total: number;
-}
+const loginSchema = z.object({
+  email: z.email('Enter a valid email'),
+  password: z.string().min(1, 'Password is required'),
+});
 
-export function Pagination({ page, limit, total }: PaginationProps) {
+type LoginValues = z.infer<typeof loginSchema>;
+
+export default function AdminLoginPage() {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const totalPages = Math.ceil(total / limit);
+  const [error, setError] = useState<Error | null>(null);
 
-  function goToPage(newPage: number) {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('page', String(newPage));
-    router.push(`${pathname}?${params.toString()}`);
+  const form = useForm<LoginValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { email: '', password: '' },
+  });
+
+  async function onSubmit(values: LoginValues) {
+    setError(null);
+    try {
+      await clientFetch('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify(values),
+      });
+      router.push('/users');
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Login failed'));
+    }
   }
 
   return (
-    <div className="flex items-center justify-between">
-      <p className="text-sm text-muted-foreground">
-        Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}
-      </p>
-      <div className="flex items-center gap-2">
-        <Button
-          variant="outline"
-          size="icon"
-          disabled={page <= 1}
-          onClick={() => goToPage(page - 1)}
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <span className="text-sm">
-          Page {page} of {totalPages}
-        </span>
-        <Button
-          variant="outline"
-          size="icon"
-          disabled={page >= totalPages}
-          onClick={() => goToPage(page + 1)}
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-      </div>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <Card className="w-full max-w-sm">
+        <CardHeader className="text-center">
+          <CardTitle className="text-xl">Admin Console</CardTitle>
+          <CardDescription>Sign in with your admin account</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              {error ? <ApiErrorAlert error={error} /> : null}
+
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input type="email" autoComplete="username" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Password</FormLabel>
+                    <FormControl>
+                      <Input type="password" autoComplete="current-password" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <LoadingButton type="submit" className="w-full" loading={form.formState.isSubmitting}>
+                Sign in
+              </LoadingButton>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add -A && git commit -m "feat(web): add reusable pagination component"
+git add -A && git commit -m "feat(admin): add middleware and login page"
 ```
 
 ---
 
-## Task 3: Admin Route Guard + Layout
+## Task 5: Admin Layout + Sidebar
 
 **Files:**
-- Create: `apps/web/src/app/(dashboard)/admin/layout.tsx`
-- Create: `apps/web/src/app/(dashboard)/admin/page.tsx`
-- Modify: `apps/web/src/components/account/dashboard-nav.tsx`
+- Create: `apps/admin/src/app/layout.tsx`
+- Create: `apps/admin/src/app/(dashboard)/layout.tsx`
+- Create: `apps/admin/src/components/layout/admin-sidebar.tsx`
 
-- [ ] **Step 1: Create admin layout with role guard**
+- [ ] **Step 1: Install distinctive fonts + create root layout**
 
-Create `apps/web/src/app/(dashboard)/admin/layout.tsx`:
+```bash
+cd apps/admin && pnpm add @fontsource-variable/outfit @fontsource/jetbrains-mono
+```
+
+Create `apps/admin/src/app/layout.tsx`:
 
 ```tsx
-import { redirect } from 'next/navigation';
-import { serverFetch } from '@/lib/api-client';
-import type { AdminUserDetail } from '@/types/admin';
+import type { Metadata } from 'next';
+import { Toaster } from '@/components/ui/sonner';
+import { Providers } from '@/components/providers';
+import './globals.css';
 
-export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  // Phase 6 RBAC approach: fetch user detail with roles from admin endpoint.
-  // The admin endpoint itself requires the `users:read` permission — if the
-  // user lacks it, the server returns 403, caught below.
-  //
-  // Pre-Phase 6 fallback: if the server still uses the simple `isAdmin` boolean,
-  // replace this with a profile fetch that includes `isAdmin` and check that flag.
-  let user: AdminUserDetail;
-  try {
-    const profile = await serverFetch<{ id: string }>('/api/account/profile');
-    user = await serverFetch<AdminUserDetail>(`/api/admin/users/${profile.id}`);
-  } catch {
-    redirect('/account');
-  }
+// Note: Providers comes from packages/ui (via path alias).
+// Pass staleTime={30_000} for admin — shorter than the 60s default for user app.
 
-  const isAdmin = user.roles.some(
-    (r) => r.name === 'admin' || r.name === 'super_admin',
+export const metadata: Metadata = {
+  title: 'Identity Admin',
+  description: 'Admin dashboard for Identity Starter',
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en" className="dark" suppressHydrationWarning>
+      <body className="font-sans antialiased">
+        <Providers staleTime={30_000}>
+          {children}
+          <Toaster />
+        </Providers>
+      </body>
+    </html>
   );
-
-  if (!isAdmin) {
-    redirect('/account');
-  }
-
-  return <>{children}</>;
 }
 ```
 
-- [ ] **Step 2: Create admin index redirect**
+Update `apps/admin/src/app/globals.css` — add font imports:
 
-Create `apps/web/src/app/(dashboard)/admin/page.tsx`:
+```css
+@import '@fontsource-variable/outfit';
+@import '@fontsource/jetbrains-mono';
+```
 
-```tsx
-import { redirect } from 'next/navigation';
+Add to theme:
 
-export default function AdminPage() {
-  redirect('/admin/users');
+```css
+:root {
+  --font-sans: 'Outfit Variable', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 }
 ```
 
-- [ ] **Step 3: Add admin nav items to dashboard nav**
+Note: Admin app defaults to dark theme (`className="dark"` on html).
 
-In `apps/web/src/components/account/dashboard-nav.tsx`, add admin nav items after the account items. Conditionally show them based on a prop:
+- [ ] **Step 2: Create admin sidebar**
 
-Add to the component props:
-
-```typescript
-interface DashboardNavProps {
-  displayName: string;
-  email: string;
-  isAdmin?: boolean;
-}
-```
-
-Add admin nav items array:
-
-```typescript
-const adminNavItems = [
-  { href: '/admin/users', label: 'Users', icon: Users },
-  { href: '/admin/roles', label: 'Roles', icon: ShieldCheck },
-  { href: '/admin/sessions', label: 'All Sessions', icon: Monitor },
-  { href: '/admin/audit-logs', label: 'Audit Logs', icon: FileText },
-];
-```
-
-Import new icons: `Users, ShieldCheck, FileText` from lucide-react.
-
-Import `Separator` from `@/components/ui/separator` (already installed by shadcn in Plan 7a).
-
-Render admin section with separator:
-
-```tsx
-{isAdmin && (
-  <>
-    <Separator className="my-3" />
-    <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-      Admin
-    </p>
-    {adminNavItems.map((item) => (
-      <Link
-        key={item.href}
-        href={item.href}
-        className={cn(
-          'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
-          pathname.startsWith(item.href)
-            ? 'bg-accent text-accent-foreground'
-            : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground',
-        )}
-      >
-        <item.icon className="h-4 w-4" />
-        {item.label}
-      </Link>
-    ))}
-  </>
-)}
-```
-
-Update the dashboard layout to pass `isAdmin` — determine from the profile's roles or a separate admin check API call. The simplest approach: try fetching `/api/admin/users?limit=1` — if it succeeds (200), user is admin; if 403, not admin. Cache this in the layout.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add -A && git commit -m "feat(web): add admin route guard and admin nav items"
-```
-
----
-
-## Task 4: User List Page
-
-**Files:**
-- Create: `apps/web/src/components/admin/user-table.tsx`
-- Create: `apps/web/src/app/(dashboard)/admin/users/page.tsx`
-
-- [ ] **Step 1: Create user table component**
-
-Create `apps/web/src/components/admin/user-table.tsx`:
+Create `apps/admin/src/components/layout/admin-sidebar.tsx`:
 
 ```tsx
 'use client';
 
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { cn } from '@/lib/utils';
+import { FileText, LogOut, Monitor, ShieldCheck, Users } from 'lucide-react';
+import { clientFetch } from '@/lib/api-client';
+import { useRouter } from 'next/navigation';
+
+const navItems = [
+  { href: '/users', label: 'Users', icon: Users },
+  { href: '/roles', label: 'Roles', icon: ShieldCheck },
+  { href: '/sessions', label: 'Sessions', icon: Monitor },
+  { href: '/audit-logs', label: 'Audit Logs', icon: FileText },
+];
+
+interface AdminSidebarProps {
+  displayName: string;
+  email: string;
+}
+
+export function AdminSidebar({ displayName, email }: AdminSidebarProps) {
+  const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await clientFetch('/api/auth/logout', { method: 'POST' });
+    router.push('/login');
+    router.refresh();
+  }
+
+  return (
+    <aside className="hidden w-56 border-r bg-card lg:flex lg:flex-col">
+      <div className="flex h-14 items-center border-b px-4">
+        <Link href="/users" className="text-sm font-semibold tracking-tight">
+          Identity Admin
+        </Link>
+      </div>
+      <nav className="flex flex-1 flex-col gap-1 p-3">
+        {navItems.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            className={cn(
+              'flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors',
+              pathname.startsWith(item.href)
+                ? 'bg-accent text-accent-foreground'
+                : 'text-muted-foreground hover:bg-accent/50 hover:text-accent-foreground',
+            )}
+          >
+            <item.icon className="h-4 w-4" />
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+      <div className="border-t p-3">
+        <div className="mb-2 px-3">
+          <p className="text-xs font-medium">{displayName}</p>
+          <p className="text-xs text-muted-foreground truncate">{email}</p>
+        </div>
+        <button
+          onClick={handleLogout}
+          className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/50 hover:text-accent-foreground"
+        >
+          <LogOut className="h-4 w-4" />
+          Sign out
+        </button>
+      </div>
+    </aside>
+  );
+}
+```
+
+- [ ] **Step 3: Create dashboard layout with admin role guard**
+
+Create `apps/admin/src/app/(dashboard)/layout.tsx`:
+
+```tsx
+import { redirect } from 'next/navigation';
+import { serverFetch } from '@/lib/api-client';
+import { AdminSidebar } from '@/components/layout/admin-sidebar';
+import type { AdminProfile } from '@/types/admin';
+
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  let profile: AdminProfile;
+  try {
+    // Fetch profile — if this 401s, cookie is invalid
+    const basicProfile = await serverFetch<{ id: string; email: string; displayName: string }>(
+      '/api/account/profile',
+    );
+    // Try admin endpoint — if 403, user is not admin
+    const detail = await serverFetch<{ roles: Array<{ id: string; name: string }> }>(
+      `/api/admin/users/${basicProfile.id}`,
+    );
+    profile = { ...basicProfile, roles: detail.roles };
+  } catch {
+    redirect('/login');
+  }
+
+  const isAdmin = profile.roles.some(
+    (r) => r.name === 'admin' || r.name === 'super_admin',
+  );
+
+  if (!isAdmin) {
+    redirect('/login');
+  }
+
+  return (
+    <div className="flex min-h-screen">
+      <AdminSidebar displayName={profile.displayName} email={profile.email} />
+      <main className="flex-1 overflow-auto">
+        <div className="mx-auto max-w-6xl px-6 py-8">{children}</div>
+      </main>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add -A && git commit -m "feat(admin): add root layout, sidebar, and admin role guard"
+```
+
+---
+
+## Task 6: User Management Pages
+
+**Files:**
+- Create: `apps/admin/src/components/users/user-table.tsx`
+- Create: `apps/admin/src/components/users/user-filters.tsx`
+- Create: `apps/admin/src/app/(dashboard)/users/page.tsx`
+- Create: `apps/admin/src/components/users/user-detail.tsx`
+- Create: `apps/admin/src/app/(dashboard)/users/[id]/page.tsx`
+
+- [ ] **Step 1: Create user table component**
+
+Create `apps/admin/src/components/users/user-table.tsx`:
+
+```tsx
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -365,7 +752,7 @@ interface UserTableProps {
   users: AdminUser[];
 }
 
-const statusColors: Record<string, string> = {
+const statusVariant: Record<string, 'default' | 'destructive' | 'secondary'> = {
   active: 'default',
   suspended: 'destructive',
   pending_verification: 'secondary',
@@ -386,95 +773,37 @@ export function UserTable({ users }: UserTableProps) {
         {users.map((user) => (
           <TableRow key={user.id}>
             <TableCell>
-              <Link href={`/admin/users/${user.id}`} className="font-medium text-primary hover:underline">
+              <Link href={`/users/${user.id}`} className="font-medium text-primary hover:underline font-mono text-xs">
                 {user.email}
               </Link>
             </TableCell>
             <TableCell>{user.displayName}</TableCell>
             <TableCell>
-              <Badge variant={statusColors[user.status] as 'default' | 'destructive' | 'secondary'}>
+              <Badge variant={statusVariant[user.status] ?? 'default'}>
                 {user.status.replace('_', ' ')}
               </Badge>
             </TableCell>
-            <TableCell className="text-muted-foreground">
+            <TableCell className="text-muted-foreground font-mono text-xs">
               {new Date(user.createdAt).toLocaleDateString()}
             </TableCell>
           </TableRow>
         ))}
-        {users.length === 0 && (
+        {users.length === 0 ? (
           <TableRow>
             <TableCell colSpan={4} className="text-center text-muted-foreground">
               No users found.
             </TableCell>
           </TableRow>
-        )}
+        ) : null}
       </TableBody>
     </Table>
   );
 }
 ```
 
-- [ ] **Step 2: Create users page with filters**
+- [ ] **Step 2: Create user filters component**
 
-Create `apps/web/src/app/(dashboard)/admin/users/page.tsx`:
-
-```tsx
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { UserTable } from '@/components/admin/user-table';
-import { Pagination } from '@/components/admin/pagination';
-import { UserFilters } from '@/components/admin/user-filters';
-import { serverFetch } from '@/lib/api-client';
-import type { AdminUser, PaginatedResponse } from '@/types/admin';
-import { Suspense } from 'react';
-
-interface UsersPageProps {
-  searchParams: Promise<Record<string, string | undefined>>;
-}
-
-export default async function UsersPage({ searchParams }: UsersPageProps) {
-  const params = await searchParams;
-  const page = Number(params.page ?? '1');
-  const limit = Number(params.limit ?? '20');
-  const status = params.status ?? '';
-  const email = params.email ?? '';
-
-  const query = new URLSearchParams();
-  query.set('page', String(page));
-  query.set('limit', String(limit));
-  if (status) {
-    query.set('status', status);
-  }
-  if (email) {
-    query.set('email', email);
-  }
-
-  const result = await serverFetch<PaginatedResponse<AdminUser>>(
-    `/api/admin/users?${query.toString()}`,
-  );
-
-  return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Users</h1>
-      <Card>
-        <CardHeader>
-          <CardTitle>User management</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Suspense fallback={null}>
-            <UserFilters />
-          </Suspense>
-          <UserTable users={result.data} />
-          <Pagination page={result.page} limit={result.limit} total={result.total} />
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-```
-
-- [ ] **Step 3: Create user filters component**
-
-Create `apps/web/src/components/admin/user-filters.tsx`:
+Create `apps/admin/src/components/users/user-filters.tsx`:
 
 ```tsx
 'use client';
@@ -492,89 +821,126 @@ export function UserFilters() {
   const searchParams = useSearchParams();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
-  function updateFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    params.set('page', '1');
-    router.push(`${pathname}?${params.toString()}`);
-  }
-
-  const debouncedUpdate = useCallback(
+  const updateParams = useCallback(
     (key: string, value: string) => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
+      const params = new URLSearchParams(searchParams.toString());
+      if (value) {
+        params.set(key, value);
+      } else {
+        params.delete(key);
       }
-      debounceRef.current = setTimeout(() => updateFilter(key, value), 300);
+      params.delete('page');
+      router.push(`${pathname}?${params.toString()}`);
     },
-    [searchParams, pathname],
+    [router, pathname, searchParams],
   );
+
+  function handleEmailSearch(value: string) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => updateParams('email', value), 300);
+  }
 
   function clearFilters() {
     router.push(pathname);
   }
 
+  const hasFilters = searchParams.has('email') || searchParams.has('status');
+
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <div className="relative flex-1 min-w-[200px]">
+    <div className="flex items-center gap-3">
+      <div className="relative flex-1">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           placeholder="Search by email..."
           defaultValue={searchParams.get('email') ?? ''}
+          onChange={(e) => handleEmailSearch(e.target.value)}
           className="pl-9"
-          onChange={(e) => debouncedUpdate('email', e.target.value)}
         />
       </div>
       <Select
-        defaultValue={searchParams.get('status') ?? ''}
-        onValueChange={(v) => updateFilter('status', v === 'all' ? '' : v)}
+        value={searchParams.get('status') ?? ''}
+        onValueChange={(v) => updateParams('status', v)}
       >
-        <SelectTrigger className="w-[160px]">
+        <SelectTrigger className="w-40">
           <SelectValue placeholder="All statuses" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All statuses</SelectItem>
+          <SelectItem value="">All statuses</SelectItem>
           <SelectItem value="active">Active</SelectItem>
           <SelectItem value="suspended">Suspended</SelectItem>
           <SelectItem value="pending_verification">Pending</SelectItem>
         </SelectContent>
       </Select>
-      {(searchParams.get('email') || searchParams.get('status')) && (
+      {hasFilters ? (
         <Button variant="ghost" size="icon" onClick={clearFilters}>
           <X className="h-4 w-4" />
         </Button>
-      )}
+      ) : null}
     </div>
   );
 }
 ```
 
-- [ ] **Step 4: Install select component**
+- [ ] **Step 3: Create users list page**
 
-```bash
-cd apps/web && pnpm dlx shadcn@latest add select
+Create `apps/admin/src/app/(dashboard)/users/page.tsx`:
+
+```tsx
+import { Suspense } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { UserTable } from '@/components/users/user-table';
+import { UserFilters } from '@/components/users/user-filters';
+import { Pagination } from '@/components/shared/pagination';
+import { serverFetch } from '@/lib/api-client';
+import type { AdminUser } from '@/types/admin';
+import type { PaginatedResponse } from '@/lib/api-client';
+
+interface UsersPageProps {
+  searchParams: Promise<Record<string, string | undefined>>;
+}
+
+export default async function UsersPage({ searchParams }: UsersPageProps) {
+  const params = await searchParams;
+  const page = Number(params.page ?? '1');
+  const limit = Number(params.limit ?? '20');
+  const status = params.status ?? '';
+  const email = params.email ?? '';
+
+  const query = new URLSearchParams();
+  query.set('page', String(page));
+  query.set('limit', String(limit));
+  if (status) query.set('status', status);
+  if (email) query.set('email', email);
+
+  const result = await serverFetch<PaginatedResponse<AdminUser>>(
+    `/api/admin/users?${query.toString()}`,
+  );
+
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-semibold">Users</h1>
+      <Card>
+        <CardHeader>
+          <CardTitle>User management</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Suspense fallback={null}>
+            <UserFilters />
+          </Suspense>
+          <UserTable users={result.data} />
+          <Suspense fallback={null}>
+            <Pagination page={result.page} limit={result.limit} total={result.total} />
+          </Suspense>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Create user detail component**
 
-```bash
-git add -A && git commit -m "feat(web): add admin user list page with filters and pagination"
-```
-
----
-
-## Task 5: User Detail Page
-
-**Files:**
-- Create: `apps/web/src/components/admin/user-detail.tsx`
-- Create: `apps/web/src/app/(dashboard)/admin/users/[id]/page.tsx`
-
-- [ ] **Step 1: Create user detail component**
-
-Create `apps/web/src/components/admin/user-detail.tsx`:
+Create `apps/admin/src/components/users/user-detail.tsx`:
 
 ```tsx
 'use client';
@@ -585,12 +951,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { clientFetch } from '@/lib/api-client';
 import type { AdminUserDetail, Role } from '@/types/admin';
-import { Ban, CheckCircle2, Trash2, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useState } from 'react';
 
 interface UserDetailProps {
@@ -608,8 +978,8 @@ export function UserDetail({ user, allRoles }: UserDetailProps) {
         method: 'PATCH',
         body: JSON.stringify({ status }),
       }),
-    onSuccess: () => {
-      toast.success('User status updated');
+    onSuccess: (_, status) => {
+      toast.success(`User ${status === 'suspended' ? 'suspended' : 'activated'}`);
       router.refresh();
     },
   });
@@ -636,15 +1006,6 @@ export function UserDetail({ user, allRoles }: UserDetailProps) {
     },
   });
 
-  const bulkRevokeMutation = useMutation({
-    mutationFn: () =>
-      clientFetch(`/api/admin/users/${user.id}/sessions`, { method: 'DELETE' }),
-    onSuccess: () => {
-      toast.success('All sessions revoked');
-      router.refresh();
-    },
-  });
-
   const assignableRoles = allRoles.filter(
     (r) => !user.roles.some((ur) => ur.id === r.id),
   );
@@ -653,60 +1014,58 @@ export function UserDetail({ user, allRoles }: UserDetailProps) {
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>{user.displayName}</CardTitle>
-            <Badge variant={user.status === 'active' ? 'default' : 'destructive'}>
-              {user.status.replace('_', ' ')}
-            </Badge>
-          </div>
+          <CardTitle>User details</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-4 text-sm">
             <div>
-              <p className="text-sm text-muted-foreground">Email</p>
-              <p className="text-sm">{user.email}</p>
+              <p className="text-muted-foreground">Email</p>
+              <p className="font-mono">{user.email}</p>
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Created</p>
-              <p className="text-sm">{new Date(user.createdAt).toLocaleString()}</p>
+              <p className="text-muted-foreground">Name</p>
+              <p>{user.displayName}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Status</p>
+              <Badge
+                variant={user.status === 'active' ? 'default' : 'destructive'}
+              >
+                {user.status}
+              </Badge>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Email verified</p>
+              <p>{user.emailVerified ? 'Yes' : 'No'}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Created</p>
+              <p className="font-mono text-xs">{new Date(user.createdAt).toLocaleString()}</p>
             </div>
           </div>
+
           <Separator />
+
           <div className="flex gap-2">
             {user.status === 'active' ? (
-              <ConfirmDialog
-                trigger={
-                  <Button variant="destructive" size="sm">
-                    <Ban className="mr-2 h-4 w-4" /> Suspend
-                  </Button>
-                }
-                title="Suspend user"
-                description="This will suspend the user and revoke all their sessions."
-                confirmLabel="Suspend"
+              <Button
                 variant="destructive"
-                onConfirm={() => statusMutation.mutate('suspended')}
-              />
+                size="sm"
+                disabled={statusMutation.isPending}
+                onClick={() => statusMutation.mutate('suspended')}
+              >
+                Suspend
+              </Button>
             ) : (
               <Button
+                variant="default"
                 size="sm"
-                onClick={() => statusMutation.mutate('active')}
                 disabled={statusMutation.isPending}
+                onClick={() => statusMutation.mutate('active')}
               >
-                <CheckCircle2 className="mr-2 h-4 w-4" /> Activate
+                Activate
               </Button>
             )}
-            <ConfirmDialog
-              trigger={
-                <Button variant="outline" size="sm">
-                  Revoke all sessions
-                </Button>
-              }
-              title="Revoke all sessions"
-              description="This will sign the user out of all devices."
-              confirmLabel="Revoke all"
-              variant="destructive"
-              onConfirm={() => bulkRevokeMutation.mutate()}
-            />
           </div>
         </CardContent>
       </Card>
@@ -718,26 +1077,25 @@ export function UserDetail({ user, allRoles }: UserDetailProps) {
         <CardContent className="space-y-4">
           <div className="flex flex-wrap gap-2">
             {user.roles.map((role) => (
-              <div key={role.id} className="flex items-center gap-1">
-                <Badge variant="outline">{role.name}</Badge>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5"
+              <Badge key={role.id} variant="outline" className="gap-1">
+                {role.name}
+                <button
+                  className="ml-1 text-muted-foreground hover:text-foreground"
                   onClick={() => removeRoleMutation.mutate(role.id)}
                 >
-                  <Trash2 className="h-3 w-3" />
-                </Button>
-              </div>
+                  ×
+                </button>
+              </Badge>
             ))}
-            {user.roles.length === 0 && (
-              <p className="text-sm text-muted-foreground">No roles assigned.</p>
-            )}
+            {user.roles.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No roles assigned</p>
+            ) : null}
           </div>
-          {assignableRoles.length > 0 && (
+
+          {assignableRoles.length > 0 ? (
             <div className="flex items-center gap-2">
               <Select value={selectedRoleId} onValueChange={setSelectedRoleId}>
-                <SelectTrigger className="w-[200px]">
+                <SelectTrigger className="w-48">
                   <SelectValue placeholder="Select role..." />
                 </SelectTrigger>
                 <SelectContent>
@@ -753,10 +1111,10 @@ export function UserDetail({ user, allRoles }: UserDetailProps) {
                 disabled={!selectedRoleId || assignRoleMutation.isPending}
                 onClick={() => assignRoleMutation.mutate(selectedRoleId)}
               >
-                <UserPlus className="mr-2 h-4 w-4" /> Assign
+                Assign
               </Button>
             </div>
-          )}
+          ) : null}
         </CardContent>
       </Card>
     </div>
@@ -764,19 +1122,18 @@ export function UserDetail({ user, allRoles }: UserDetailProps) {
 }
 ```
 
-- [ ] **Step 2: Create user detail page**
+- [ ] **Step 5: Create user detail page**
 
-Create `apps/web/src/app/(dashboard)/admin/users/[id]/page.tsx`:
+Create `apps/admin/src/app/(dashboard)/users/[id]/page.tsx`:
+
+Best practice (`async-parallel`): fetch user and roles in parallel.
 
 ```tsx
-import { notFound } from 'next/navigation';
-import { UserDetail } from '@/components/admin/user-detail';
-import { serverFetch } from '@/lib/api-client';
-import { ApiRequestError } from '@/lib/api-client';
-import type { AdminUserDetail, Role } from '@/types/admin';
-import { Button } from '@/components/ui/button';
-import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { serverFetch } from '@/lib/api-client';
+import { UserDetail } from '@/components/users/user-detail';
+import type { AdminUserDetail, Role } from '@/types/admin';
+import { ChevronLeft } from 'lucide-react';
 
 interface UserDetailPageProps {
   params: Promise<{ id: string }>;
@@ -785,27 +1142,19 @@ interface UserDetailPageProps {
 export default async function UserDetailPage({ params }: UserDetailPageProps) {
   const { id } = await params;
 
-  let user: AdminUserDetail;
-  let roles: Role[];
-  try {
-    [user, roles] = await Promise.all([
-      serverFetch<AdminUserDetail>(`/api/admin/users/${id}`),
-      serverFetch<Role[]>('/api/admin/roles'),
-    ]);
-  } catch (err) {
-    if (err instanceof ApiRequestError && err.statusCode === 404) {
-      notFound();
-    }
-    throw err;
-  }
+  // Best practice: parallel fetch
+  const [user, roles] = await Promise.all([
+    serverFetch<AdminUserDetail>(`/api/admin/users/${id}`),
+    serverFetch<Role[]>('/api/admin/roles'),
+  ]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" asChild>
-          <Link href="/admin/users"><ArrowLeft className="h-4 w-4" /></Link>
-        </Button>
-        <h1 className="text-2xl font-bold">User detail</h1>
+      <div className="flex items-center gap-2">
+        <Link href="/users" className="text-muted-foreground hover:text-foreground">
+          <ChevronLeft className="h-4 w-4" />
+        </Link>
+        <h1 className="text-2xl font-semibold">{user.displayName}</h1>
       </div>
       <UserDetail user={user} allRoles={roles} />
     </div>
@@ -813,30 +1162,35 @@ export default async function UserDetailPage({ params }: UserDetailPageProps) {
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add -A && git commit -m "feat(web): add admin user detail page with status/role management"
+git add -A && git commit -m "feat(admin): add user management pages with filters and detail view"
 ```
 
 ---
 
-## Task 6: Role Management Page
+## Task 7: Role Management Page
 
 **Files:**
-- Create: `apps/web/src/components/admin/role-list.tsx`
-- Create: `apps/web/src/components/admin/create-role-dialog.tsx`
-- Create: `apps/web/src/app/(dashboard)/admin/roles/page.tsx`
+- Create: `apps/admin/src/components/roles/role-list.tsx`
+- Create: `apps/admin/src/components/roles/create-role-dialog.tsx`
+- Create: `apps/admin/src/app/(dashboard)/roles/page.tsx`
 
 - [ ] **Step 1: Create role list component**
 
-Create `apps/web/src/components/admin/role-list.tsx`:
+Create `apps/admin/src/components/roles/role-list.tsx`:
 
 ```tsx
-'use client';
-
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import type { Role } from '@/types/admin';
 
 interface RoleListProps {
@@ -845,37 +1199,46 @@ interface RoleListProps {
 
 export function RoleList({ roles }: RoleListProps) {
   return (
-    <div className="space-y-3">
-      {roles.map((role) => (
-        <Card key={role.id}>
-          <CardContent className="flex items-center justify-between p-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-medium">{role.name}</p>
-                {role.isSystem && <Badge variant="outline">System</Badge>}
-              </div>
-              {role.description && (
-                <p className="text-xs text-muted-foreground">{role.description}</p>
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Name</TableHead>
+          <TableHead>Description</TableHead>
+          <TableHead>Permissions</TableHead>
+          <TableHead>Type</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {roles.map((role) => (
+          <TableRow key={role.id}>
+            <TableCell className="font-medium font-mono text-sm">{role.name}</TableCell>
+            <TableCell className="text-muted-foreground">{role.description ?? '—'}</TableCell>
+            <TableCell>
+              <Badge variant="outline">{role.permissionCount}</Badge>
+            </TableCell>
+            <TableCell>
+              {role.isSystem ? (
+                <Badge variant="secondary">System</Badge>
+              ) : (
+                <Badge variant="outline">Custom</Badge>
               )}
-            </div>
-            <Badge variant="secondary">{role.permissionCount} permissions</Badge>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 ```
 
 - [ ] **Step 2: Create role dialog**
 
-Create `apps/web/src/components/admin/create-role-dialog.tsx`:
+Create `apps/admin/src/components/roles/create-role-dialog.tsx`:
 
 ```tsx
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -884,6 +1247,7 @@ import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -897,7 +1261,6 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { LoadingButton } from '@/components/shared/loading-button';
 import { ApiErrorAlert } from '@/components/shared/api-error-alert';
 import { clientFetch } from '@/lib/api-client';
@@ -905,8 +1268,8 @@ import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
 
 const createRoleSchema = z.object({
-  name: z.string().min(1).max(100),
-  description: z.string().max(500).optional(),
+  name: z.string().min(1, 'Name is required').max(50),
+  description: z.string().max(255).optional(),
 });
 
 type CreateRoleValues = z.infer<typeof createRoleSchema>;
@@ -914,40 +1277,45 @@ type CreateRoleValues = z.infer<typeof createRoleSchema>;
 export function CreateRoleDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
   const form = useForm<CreateRoleValues>({
     resolver: zodResolver(createRoleSchema),
     defaultValues: { name: '', description: '' },
   });
 
-  const mutation = useMutation({
-    mutationFn: (values: CreateRoleValues) =>
-      clientFetch('/api/admin/roles', {
+  async function onSubmit(values: CreateRoleValues) {
+    setError(null);
+    try {
+      await clientFetch('/api/admin/roles', {
         method: 'POST',
         body: JSON.stringify(values),
-      }),
-    onSuccess: () => {
+      });
       toast.success('Role created');
-      setOpen(false);
       form.reset();
+      setOpen(false);
       router.refresh();
-    },
-  });
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to create role'));
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button size="sm">
-          <Plus className="mr-2 h-4 w-4" /> Create role
+          <Plus className="mr-2 h-4 w-4" />
+          Create role
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create role</DialogTitle>
+          <DialogDescription>Add a new role for access control</DialogDescription>
         </DialogHeader>
         <Form {...form}>
-          <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
-            {mutation.error && <ApiErrorAlert error={mutation.error} />}
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            {error ? <ApiErrorAlert error={error} /> : null}
 
             <FormField
               control={form.control}
@@ -956,7 +1324,7 @@ export function CreateRoleDialog() {
                 <FormItem>
                   <FormLabel>Name</FormLabel>
                   <FormControl>
-                    <Input placeholder="moderator" {...field} />
+                    <Input placeholder="editor" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -970,14 +1338,14 @@ export function CreateRoleDialog() {
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl>
-                    <Textarea placeholder="What this role can do..." {...field} />
+                    <Input placeholder="Can edit content" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
 
-            <LoadingButton type="submit" className="w-full" loading={mutation.isPending}>
+            <LoadingButton type="submit" loading={form.formState.isSubmitting}>
               Create
             </LoadingButton>
           </form>
@@ -988,20 +1356,14 @@ export function CreateRoleDialog() {
 }
 ```
 
-- [ ] **Step 3: Install textarea**
+- [ ] **Step 3: Create roles page**
 
-```bash
-cd apps/web && pnpm dlx shadcn@latest add textarea
-```
-
-- [ ] **Step 4: Create roles page**
-
-Create `apps/web/src/app/(dashboard)/admin/roles/page.tsx`:
+Create `apps/admin/src/app/(dashboard)/roles/page.tsx`:
 
 ```tsx
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { RoleList } from '@/components/admin/role-list';
-import { CreateRoleDialog } from '@/components/admin/create-role-dialog';
+import { RoleList } from '@/components/roles/role-list';
+import { CreateRoleDialog } from '@/components/roles/create-role-dialog';
 import { serverFetch } from '@/lib/api-client';
 import type { Role } from '@/types/admin';
 
@@ -1011,12 +1373,12 @@ export default async function RolesPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Roles</h1>
+        <h1 className="text-2xl font-semibold">Roles</h1>
         <CreateRoleDialog />
       </div>
       <Card>
         <CardHeader>
-          <CardTitle>All roles</CardTitle>
+          <CardTitle>Role management</CardTitle>
         </CardHeader>
         <CardContent>
           <RoleList roles={roles} />
@@ -1027,23 +1389,23 @@ export default async function RolesPage() {
 }
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add -A && git commit -m "feat(web): add admin role management page"
+git add -A && git commit -m "feat(admin): add role management page with create dialog"
 ```
 
 ---
 
-## Task 7: Session Management Page
+## Task 8: Session Management Page
 
 **Files:**
-- Create: `apps/web/src/components/admin/session-table.tsx`
-- Create: `apps/web/src/app/(dashboard)/admin/sessions/page.tsx`
+- Create: `apps/admin/src/components/sessions/session-table.tsx`
+- Create: `apps/admin/src/app/(dashboard)/sessions/page.tsx`
 
 - [ ] **Step 1: Create session table component**
 
-Create `apps/web/src/components/admin/session-table.tsx`:
+Create `apps/admin/src/components/sessions/session-table.tsx`:
 
 ```tsx
 'use client';
@@ -1059,7 +1421,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { clientFetch } from '@/lib/api-client';
 import type { AdminSession } from '@/types/admin';
 import { Trash2 } from 'lucide-react';
@@ -1073,8 +1434,8 @@ export function SessionTable({ sessions }: SessionTableProps) {
   const router = useRouter();
 
   const revokeMutation = useMutation({
-    mutationFn: (id: string) =>
-      clientFetch(`/api/admin/sessions/${id}`, { method: 'DELETE' }),
+    mutationFn: (sessionId: string) =>
+      clientFetch(`/api/admin/sessions/${sessionId}`, { method: 'DELETE' }),
     onSuccess: () => {
       toast.success('Session revoked');
       router.refresh();
@@ -1086,46 +1447,46 @@ export function SessionTable({ sessions }: SessionTableProps) {
       <TableHeader>
         <TableRow>
           <TableHead>User ID</TableHead>
-          <TableHead>IP</TableHead>
+          <TableHead>IP Address</TableHead>
           <TableHead>User Agent</TableHead>
           <TableHead>Last Active</TableHead>
-          <TableHead className="w-[50px]" />
+          <TableHead>Created</TableHead>
+          <TableHead className="w-12" />
         </TableRow>
       </TableHeader>
       <TableBody>
         {sessions.map((session) => (
           <TableRow key={session.id}>
             <TableCell className="font-mono text-xs">{session.userId.slice(0, 8)}...</TableCell>
-            <TableCell>{session.ipAddress ?? '—'}</TableCell>
-            <TableCell className="max-w-[200px] truncate text-xs">
+            <TableCell className="font-mono text-xs">{session.ipAddress ?? '—'}</TableCell>
+            <TableCell className="max-w-48 truncate text-xs">
               {session.userAgent ?? '—'}
             </TableCell>
-            <TableCell className="text-muted-foreground">
+            <TableCell className="font-mono text-xs">
               {new Date(session.lastActiveAt).toLocaleString()}
             </TableCell>
+            <TableCell className="font-mono text-xs">
+              {new Date(session.createdAt).toLocaleString()}
+            </TableCell>
             <TableCell>
-              <ConfirmDialog
-                trigger={
-                  <Button variant="ghost" size="icon">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                }
-                title="Revoke session"
-                description="This will immediately sign out this session."
-                confirmLabel="Revoke"
-                variant="destructive"
-                onConfirm={() => revokeMutation.mutate(session.id)}
-              />
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled={revokeMutation.isPending}
+                onClick={() => revokeMutation.mutate(session.id)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
             </TableCell>
           </TableRow>
         ))}
-        {sessions.length === 0 && (
+        {sessions.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={5} className="text-center text-muted-foreground">
+            <TableCell colSpan={6} className="text-center text-muted-foreground">
               No sessions found.
             </TableCell>
           </TableRow>
-        )}
+        ) : null}
       </TableBody>
     </Table>
   );
@@ -1134,31 +1495,29 @@ export function SessionTable({ sessions }: SessionTableProps) {
 
 - [ ] **Step 2: Create sessions page**
 
-Create `apps/web/src/app/(dashboard)/admin/sessions/page.tsx`:
+Create `apps/admin/src/app/(dashboard)/sessions/page.tsx`:
 
 ```tsx
+import { Suspense } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { SessionTable } from '@/components/admin/session-table';
-import { Pagination } from '@/components/admin/pagination';
+import { SessionTable } from '@/components/sessions/session-table';
+import { Pagination } from '@/components/shared/pagination';
 import { serverFetch } from '@/lib/api-client';
-import type { AdminSession, PaginatedResponse } from '@/types/admin';
+import type { AdminSession } from '@/types/admin';
+import type { PaginatedResponse } from '@/lib/api-client';
 
 interface SessionsPageProps {
   searchParams: Promise<Record<string, string | undefined>>;
 }
 
-export default async function AdminSessionsPage({ searchParams }: SessionsPageProps) {
+export default async function SessionsPage({ searchParams }: SessionsPageProps) {
   const params = await searchParams;
   const page = Number(params.page ?? '1');
   const limit = Number(params.limit ?? '20');
-  const userId = params.userId ?? '';
 
   const query = new URLSearchParams();
   query.set('page', String(page));
   query.set('limit', String(limit));
-  if (userId) {
-    query.set('userId', userId);
-  }
 
   const result = await serverFetch<PaginatedResponse<AdminSession>>(
     `/api/admin/sessions?${query.toString()}`,
@@ -1166,14 +1525,16 @@ export default async function AdminSessionsPage({ searchParams }: SessionsPagePr
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Sessions</h1>
+      <h1 className="text-2xl font-semibold">Sessions</h1>
       <Card>
         <CardHeader>
-          <CardTitle>All active sessions</CardTitle>
+          <CardTitle>Active sessions</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <SessionTable sessions={result.data} />
-          <Pagination page={result.page} limit={result.limit} total={result.total} />
+          <Suspense fallback={null}>
+            <Pagination page={result.page} limit={result.limit} total={result.total} />
+          </Suspense>
         </CardContent>
       </Card>
     </div>
@@ -1184,25 +1545,23 @@ export default async function AdminSessionsPage({ searchParams }: SessionsPagePr
 - [ ] **Step 3: Commit**
 
 ```bash
-git add -A && git commit -m "feat(web): add admin session management page"
+git add -A && git commit -m "feat(admin): add session management page"
 ```
 
 ---
 
-## Task 8: Audit Log Viewer
+## Task 9: Audit Log Viewer
 
 **Files:**
-- Create: `apps/web/src/components/admin/audit-log-table.tsx`
-- Create: `apps/web/src/components/admin/audit-filters.tsx`
-- Create: `apps/web/src/app/(dashboard)/admin/audit-logs/page.tsx`
+- Create: `apps/admin/src/components/audit/audit-log-table.tsx`
+- Create: `apps/admin/src/components/audit/audit-log-filters.tsx`
+- Create: `apps/admin/src/app/(dashboard)/audit-logs/page.tsx`
 
-- [ ] **Step 1: Create audit log table**
+- [ ] **Step 1: Create audit log table component**
 
-Create `apps/web/src/components/admin/audit-log-table.tsx`:
+Create `apps/admin/src/components/audit/audit-log-table.tsx`:
 
 ```tsx
-'use client';
-
 import {
   Table,
   TableBody,
@@ -1233,7 +1592,7 @@ export function AuditLogTable({ entries }: AuditLogTableProps) {
       <TableBody>
         {entries.map((entry) => (
           <TableRow key={entry.id}>
-            <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+            <TableCell className="font-mono text-xs whitespace-nowrap">
               {new Date(entry.createdAt).toLocaleString()}
             </TableCell>
             <TableCell>
@@ -1242,37 +1601,35 @@ export function AuditLogTable({ entries }: AuditLogTableProps) {
               </Badge>
             </TableCell>
             <TableCell className="text-xs">
-              {entry.resourceType}
-              {entry.resourceId && (
-                <span className="ml-1 font-mono text-muted-foreground">
-                  {entry.resourceId.slice(0, 8)}
-                </span>
-              )}
+              <span className="text-muted-foreground">{entry.resourceType}</span>
+              {entry.resourceId ? (
+                <span className="ml-1 font-mono">{entry.resourceId.slice(0, 8)}...</span>
+              ) : null}
             </TableCell>
             <TableCell className="font-mono text-xs">
-              {entry.actorId ? entry.actorId.slice(0, 8) : '—'}
+              {entry.actorId ? `${entry.actorId.slice(0, 8)}...` : 'system'}
             </TableCell>
-            <TableCell className="text-xs text-muted-foreground">
+            <TableCell className="font-mono text-xs">
               {entry.ipAddress ?? '—'}
             </TableCell>
           </TableRow>
         ))}
-        {entries.length === 0 && (
+        {entries.length === 0 ? (
           <TableRow>
             <TableCell colSpan={5} className="text-center text-muted-foreground">
-              No audit logs found.
+              No audit log entries found.
             </TableCell>
           </TableRow>
-        )}
+        ) : null}
       </TableBody>
     </Table>
   );
 }
 ```
 
-- [ ] **Step 2: Create audit filters**
+- [ ] **Step 2: Create audit log filters**
 
-Create `apps/web/src/components/admin/audit-filters.tsx`:
+Create `apps/admin/src/components/audit/audit-log-filters.tsx`:
 
 ```tsx
 'use client';
@@ -1282,100 +1639,93 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Download, X } from 'lucide-react';
+import { Search, X, Download } from 'lucide-react';
 import { toast } from 'sonner';
 
-const RESOURCE_TYPES = ['user', 'session', 'auth', 'mfa', 'passkey', 'oauth', 'consent', 'client', 'role', 'user_role'];
-
-export function AuditFilters() {
+export function AuditLogFilters() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
-  function updateFilter(key: string, value: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (value) {
-      params.set(key, value);
-    } else {
-      params.delete(key);
-    }
-    params.set('page', '1');
-    router.push(`${pathname}?${params.toString()}`);
-  }
-
-  const debouncedUpdate = useCallback(
+  const updateParams = useCallback(
     (key: string, value: string) => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
+      const params = new URLSearchParams(searchParams.toString());
+      if (value) {
+        params.set(key, value);
+      } else {
+        params.delete(key);
       }
-      debounceRef.current = setTimeout(() => updateFilter(key, value), 300);
+      params.delete('page');
+      router.push(`${pathname}?${params.toString()}`);
     },
-    [searchParams, pathname],
+    [router, pathname, searchParams],
   );
+
+  function handleActionSearch(value: string) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => updateParams('action', value), 300);
+  }
 
   function clearFilters() {
     router.push(pathname);
   }
 
   async function handleExport() {
-    const exportParams = new URLSearchParams();
-    const action = searchParams.get('action');
-    const resourceType = searchParams.get('resourceType');
-    if (action) {
-      exportParams.set('action', action);
+    try {
+      const params = new URLSearchParams(searchParams.toString());
+      const response = await fetch(`/api/admin/audit-logs/export?${params.toString()}`, {
+        credentials: 'same-origin',
+      });
+      if (!response.ok) throw new Error('Export failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.ndjson`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error('Failed to export audit logs');
     }
-    if (resourceType) {
-      exportParams.set('resourceType', resourceType);
-    }
-
-    const response = await fetch(`/api/admin/audit-logs/export?${exportParams.toString()}`, {
-      credentials: 'same-origin',
-    });
-    if (!response.ok) {
-      toast.error('Export failed');
-      return;
-    }
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.ndjson`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Export downloaded');
   }
 
+  const hasFilters = searchParams.has('action') || searchParams.has('resourceType');
+
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      <Input
-        placeholder="Filter by action..."
-        defaultValue={searchParams.get('action') ?? ''}
-        className="w-[200px]"
-        onChange={(e) => debouncedUpdate('action', e.target.value)}
-      />
+    <div className="flex items-center gap-3">
+      <div className="relative flex-1">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Filter by action..."
+          defaultValue={searchParams.get('action') ?? ''}
+          onChange={(e) => handleActionSearch(e.target.value)}
+          className="pl-9"
+        />
+      </div>
       <Select
-        defaultValue={searchParams.get('resourceType') ?? ''}
-        onValueChange={(v) => updateFilter('resourceType', v === 'all' ? '' : v)}
+        value={searchParams.get('resourceType') ?? ''}
+        onValueChange={(v) => updateParams('resourceType', v)}
       >
-        <SelectTrigger className="w-[160px]">
+        <SelectTrigger className="w-40">
           <SelectValue placeholder="All resources" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">All resources</SelectItem>
-          {RESOURCE_TYPES.map((type) => (
-            <SelectItem key={type} value={type}>{type}</SelectItem>
-          ))}
+          <SelectItem value="">All resources</SelectItem>
+          <SelectItem value="user">User</SelectItem>
+          <SelectItem value="session">Session</SelectItem>
+          <SelectItem value="role">Role</SelectItem>
+          <SelectItem value="client">OAuth Client</SelectItem>
         </SelectContent>
       </Select>
-      {(searchParams.get('action') || searchParams.get('resourceType')) && (
+      {hasFilters ? (
         <Button variant="ghost" size="icon" onClick={clearFilters}>
           <X className="h-4 w-4" />
         </Button>
-      )}
-      <Button variant="outline" size="sm" className="ml-auto" onClick={handleExport}>
+      ) : null}
+      <Button variant="outline" size="sm" onClick={handleExport}>
         <Download className="mr-2 h-4 w-4" />
-        Export NDJSON
+        Export
       </Button>
     </div>
   );
@@ -1384,16 +1734,19 @@ export function AuditFilters() {
 
 - [ ] **Step 3: Create audit logs page**
 
-Create `apps/web/src/app/(dashboard)/admin/audit-logs/page.tsx`:
+Create `apps/admin/src/app/(dashboard)/audit-logs/page.tsx`:
 
 ```tsx
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { AuditLogTable } from '@/components/admin/audit-log-table';
-import { AuditFilters } from '@/components/admin/audit-filters';
-import { Pagination } from '@/components/admin/pagination';
-import { serverFetch } from '@/lib/api-client';
-import type { AuditLogEntry, PaginatedResponse } from '@/types/admin';
 import { Suspense } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { AuditLogTable } from '@/components/audit/audit-log-table';
+import { AuditLogFilters } from '@/components/audit/audit-log-filters';
+import { Pagination } from '@/components/shared/pagination';
+import { serverFetch } from '@/lib/api-client';
+import type { AuditLogEntry, ChainVerification } from '@/types/admin';
+import type { PaginatedResponse } from '@/lib/api-client';
+import { Badge } from '@/components/ui/badge';
+import { CheckCircle2, AlertTriangle } from 'lucide-react';
 
 interface AuditLogsPageProps {
   searchParams: Promise<Record<string, string | undefined>>;
@@ -1402,41 +1755,55 @@ interface AuditLogsPageProps {
 export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps) {
   const params = await searchParams;
   const page = Number(params.page ?? '1');
-  const limit = Number(params.limit ?? '20');
+  const limit = Number(params.limit ?? '50');
   const action = params.action ?? '';
   const resourceType = params.resourceType ?? '';
-  const actorId = params.actorId ?? '';
 
   const query = new URLSearchParams();
   query.set('page', String(page));
   query.set('limit', String(limit));
-  if (action) {
-    query.set('action', action);
-  }
-  if (resourceType) {
-    query.set('resourceType', resourceType);
-  }
-  if (actorId) {
-    query.set('actorId', actorId);
-  }
+  if (action) query.set('action', action);
+  if (resourceType) query.set('resourceType', resourceType);
 
-  const result = await serverFetch<PaginatedResponse<AuditLogEntry>>(
-    `/api/admin/audit-logs?${query.toString()}`,
-  );
+  // Best practice (async-parallel): fetch logs and chain verification in parallel
+  const [result, verification] = await Promise.all([
+    serverFetch<PaginatedResponse<AuditLogEntry>>(
+      `/api/admin/audit-logs?${query.toString()}`,
+    ),
+    serverFetch<ChainVerification>('/api/admin/audit-logs/verify'),
+  ]);
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Audit Logs</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Audit Logs</h1>
+        <div className="flex items-center gap-2">
+          {verification.valid ? (
+            <Badge variant="outline" className="gap-1">
+              <CheckCircle2 className="h-3 w-3 text-green-500" />
+              Chain valid ({verification.checkedEntries} entries)
+            </Badge>
+          ) : (
+            <Badge variant="destructive" className="gap-1">
+              <AlertTriangle className="h-3 w-3" />
+              Chain broken
+            </Badge>
+          )}
+        </div>
+      </div>
       <Card>
         <CardHeader>
-          <CardTitle>Event history</CardTitle>
+          <CardTitle>Activity log</CardTitle>
+          <CardDescription>All administrative actions are recorded here</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <Suspense fallback={null}>
-            <AuditFilters />
+            <AuditLogFilters />
           </Suspense>
           <AuditLogTable entries={result.data} />
-          <Pagination page={result.page} limit={result.limit} total={result.total} />
+          <Suspense fallback={null}>
+            <Pagination page={result.page} limit={result.limit} total={result.total} />
+          </Suspense>
         </CardContent>
       </Card>
     </div>
@@ -1447,103 +1814,161 @@ export default async function AuditLogsPage({ searchParams }: AuditLogsPageProps
 - [ ] **Step 4: Commit**
 
 ```bash
-git add -A && git commit -m "feat(web): add audit log viewer with filters and NDJSON export"
+git add -A && git commit -m "feat(admin): add audit log viewer with filters, export, and chain verification"
 ```
 
 ---
 
-## Task 9: Playwright E2E Tests
+## Task 10: Playwright E2E Tests
 
 **Files:**
-- Create: `apps/web/e2e/admin.spec.ts`
+- Create: `apps/admin/playwright.config.ts`
+- Create: `apps/admin/e2e/admin.spec.ts`
 
-- [ ] **Step 1: Write admin E2E tests**
+- [ ] **Step 1: Install Playwright**
 
-Create `apps/web/e2e/admin.spec.ts`:
+```bash
+cd apps/admin && pnpm add -D @playwright/test
+```
+
+- [ ] **Step 2: Create Playwright config**
+
+Create `apps/admin/playwright.config.ts`:
+
+```typescript
+import { defineConfig } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './e2e',
+  fullyParallel: true,
+  forbidOnly: !!process.env.CI,
+  retries: process.env.CI ? 2 : 0,
+  workers: process.env.CI ? 1 : undefined,
+  reporter: 'html',
+  use: {
+    baseURL: 'http://localhost:3002',
+    trace: 'on-first-retry',
+  },
+  webServer: {
+    command: 'pnpm dev',
+    url: 'http://localhost:3002',
+    reuseExistingServer: !process.env.CI,
+  },
+});
+```
+
+- [ ] **Step 3: Write admin E2E tests**
+
+Create `apps/admin/e2e/admin.spec.ts`:
 
 ```typescript
 import { expect, test } from '@playwright/test';
 
-// Admin E2E tests require:
-// 1. A running server with DB
-// 2. An admin user seeded (via RBAC seed + role assignment)
-// Set ADMIN_EMAIL and ADMIN_PASSWORD env vars for the test admin user.
-
 test.describe('Admin Dashboard', () => {
   test.skip(
-    !process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD,
-    'Requires ADMIN_EMAIL and ADMIN_PASSWORD env vars',
+    !process.env.TEST_ADMIN_EMAIL || !process.env.TEST_ADMIN_PASSWORD,
+    'Requires TEST_ADMIN_EMAIL and TEST_ADMIN_PASSWORD env vars',
   );
 
-  const adminEmail = process.env.ADMIN_EMAIL ?? '';
-  const adminPassword = process.env.ADMIN_PASSWORD ?? '';
+  const adminEmail = process.env.TEST_ADMIN_EMAIL ?? '';
+  const adminPassword = process.env.TEST_ADMIN_PASSWORD ?? '';
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel(/email/i).fill(adminEmail);
     await page.getByLabel(/password/i).fill(adminPassword);
     await page.getByRole('button', { name: /sign in/i }).click();
-    await page.waitForURL(/\/account/);
+    await page.waitForURL('/users');
   });
 
-  test('admin nav items visible for admin user', async ({ page }) => {
-    await expect(page.getByRole('link', { name: /users/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /roles/i })).toBeVisible();
-    await expect(page.getByRole('link', { name: /audit/i })).toBeVisible();
-  });
-
-  test('user list page loads', async ({ page }) => {
-    await page.goto('/admin/users');
+  test('shows users page', async ({ page }) => {
     await expect(page.getByText(/user management/i)).toBeVisible();
   });
 
-  test('roles page loads', async ({ page }) => {
-    await page.goto('/admin/roles');
-    await expect(page.getByText(/all roles/i)).toBeVisible();
-    await expect(page.getByText(/super_admin/i)).toBeVisible();
+  test('shows roles page', async ({ page }) => {
+    await page.goto('/roles');
+    await expect(page.getByText(/role management/i)).toBeVisible();
   });
 
-  test('sessions page loads', async ({ page }) => {
-    await page.goto('/admin/sessions');
-    await expect(page.getByText(/all active sessions/i)).toBeVisible();
+  test('shows sessions page', async ({ page }) => {
+    await page.goto('/sessions');
+    await expect(page.getByText(/active sessions/i)).toBeVisible();
   });
 
-  test('audit logs page loads', async ({ page }) => {
-    await page.goto('/admin/audit-logs');
-    await expect(page.getByText(/event history/i)).toBeVisible();
+  test('shows audit logs page', async ({ page }) => {
+    await page.goto('/audit-logs');
+    await expect(page.getByText(/activity log/i)).toBeVisible();
   });
 
-  test('non-admin redirected away from admin pages', async ({ page, browser }) => {
-    // Create a new context with a non-admin user
+  test('redirects non-admin to login', async ({ browser }) => {
     const context = await browser.newContext();
-    const newPage = await context.newPage();
-
-    const email = `e2e-nonadmin-${Date.now()}@test.example`;
-    await newPage.goto('/register');
-    await newPage.getByLabel(/name/i).fill('Non Admin');
-    await newPage.getByLabel(/email/i).fill(email);
-    await newPage.getByLabel(/password/i).fill('TestPassword123!');
-    await newPage.getByRole('button', { name: /create account/i }).click();
-    await newPage.waitForURL(/\/(account|verify-email)/);
-
-    await newPage.goto('/admin/users');
-    await expect(newPage).toHaveURL(/\/account/);
-
+    const page = await context.newPage();
+    await page.goto('/users');
+    await expect(page).toHaveURL(/\/login/);
     await context.close();
   });
 });
 ```
 
-- [ ] **Step 2: Run all E2E tests**
+- [ ] **Step 4: Commit**
 
 ```bash
-cd apps/web && pnpm e2e
+git add -A && git commit -m "test(admin): add Playwright E2E setup and admin flow tests"
 ```
+
+---
+
+## Task 11: Build Verification + Lint
+
+- [ ] **Step 1: Run full build**
+
+```bash
+pnpm turbo build
+```
+
+- [ ] **Step 2: Run Biome lint**
+
+```bash
+pnpm biome check apps/admin/
+```
+
+Fix any issues.
+
+- [ ] **Step 3: Commit any fixes**
+
+```bash
+git add -A && git commit -m "chore(admin): fix lint issues and verify build"
+```
+
+---
+
+## Task 12: Update Root Turbo Config
+
+- [ ] **Step 1: Add dev:admin script to root**
+
+In root `package.json`, add convenience scripts:
+
+```json
+"dev:web": "pnpm --filter @identity-starter/web dev",
+"dev:admin": "pnpm --filter @identity-starter/admin dev",
+"dev:all": "turbo run dev"
+```
+
+- [ ] **Step 2: Verify all apps start together**
+
+```bash
+pnpm dev:all
+```
+
+This should start:
+- Server on port 3001
+- Web app on port 3000
+- Admin app on port 3002
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add -A && git commit -m "test(web): add admin dashboard E2E tests"
+git add -A && git commit -m "chore: add convenience dev scripts for all apps"
 ```
 
 ---
@@ -1551,22 +1976,12 @@ git add -A && git commit -m "test(web): add admin dashboard E2E tests"
 ## Task Dependency Graph
 
 ```
-Task 1 (types + deps) ── Task 2 (pagination)
-                              │
-                         Task 3 (admin guard + layout)
-                              │
-               ┌──────────────┼──────────────┬──────────────┐
-               │              │              │              │
-            Task 4         Task 6         Task 7         Task 8
-          (user list)    (roles page)   (sessions)    (audit logs)
-               │
-            Task 5
-          (user detail)
-               │
-               └──────────────┼──────────────┴──────────────┘
-                              │
-                         Task 9 (Playwright E2E)
-```
+Task 1 (scaffold) ─── Task 2 (shared pkg) ─── Task 3 (types) ─┬─ Task 6 (users)
+                                                                 ├─ Task 7 (roles)
+Task 4 (middleware + login) ──────────────────────────────────┘  ├─ Task 8 (sessions)
+Task 5 (layout + sidebar) ──────────────────────────────────────┘  └─ Task 9 (audit)
 
-Tasks 4, 6, 7, 8 can run **in parallel** after Task 3.
-Task 5 depends on Task 4 (user table links to detail).
+Task 10 (E2E) ─── depends on Tasks 6-9
+Task 11 (lint) ─── depends on all
+Task 12 (root config) ─── independent
+```

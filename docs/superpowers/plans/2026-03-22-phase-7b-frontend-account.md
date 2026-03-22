@@ -4,12 +4,18 @@
 
 **Goal:** Build the authenticated account management pages — profile, sessions, passkeys, MFA settings, and password change.
 
-**Architecture:** Dashboard layout with sidebar navigation. Server Components load initial data via `serverFetch`. TanStack Query handles mutations (revoke session, delete passkey, toggle MFA). Passkey registration reuses `@simplewebauthn/browser`. QR code rendering for TOTP enrollment via `qrcode.react`.
+**Architecture:** Dashboard layout with sidebar navigation. Server Components load initial data via `serverFetch`. TanStack Query handles mutations (revoke session, delete passkey, toggle MFA). Passkey registration reuses `@simplewebauthn/browser`. QR code rendering for TOTP enrollment via `qrcode.react`. No admin nav — admin is a separate app (`apps/admin`, see Plan 7d).
 
 **Tech Stack:** Next.js 15, React 19, TanStack Query, React Hook Form + Zod 4, @simplewebauthn/browser, qrcode.react, shadcn/ui
 
 **Prerequisite:** Plan 7a complete (app scaffold, auth middleware, API client, auth pages).
 **Phase doc:** `docs/phase-7-frontend.md`
+
+**Vercel Best Practices:**
+- `bundle-dynamic-imports`: Lazy-load `qrcode.react` (only needed on MFA settings page)
+- `server-serialization`: Only pass needed profile fields to Client Components
+- `async-parallel`: Parallel fetch of profile + sessions in dashboard layout
+- `rerender-no-inline-components`: All components defined at module level
 
 ---
 
@@ -20,6 +26,7 @@
 - Create: `apps/web/src/app/(dashboard)/account/sessions/page.tsx`
 - Create: `apps/web/src/app/(dashboard)/account/passkeys/page.tsx`
 - Create: `apps/web/src/app/(dashboard)/account/security/page.tsx` — MFA + password
+- Create: `apps/web/src/components/account/dashboard-nav.tsx`
 - Create: `apps/web/src/components/account/profile-form.tsx`
 - Create: `apps/web/src/components/account/session-list.tsx`
 - Create: `apps/web/src/components/account/passkey-list.tsx`
@@ -28,7 +35,6 @@
 - Create: `apps/web/src/components/account/totp-disable.tsx`
 - Create: `apps/web/src/components/account/recovery-codes.tsx`
 - Create: `apps/web/src/components/account/change-password-form.tsx`
-- Create: `apps/web/src/components/shared/confirm-dialog.tsx`
 - Create: `apps/web/src/types/account.ts`
 - Create: `apps/web/e2e/account.spec.ts`
 
@@ -47,11 +53,11 @@
 | DELETE | `/api/account/passkeys/:id` | Delete passkey |
 | POST | `/api/auth/passkeys/register/options` | Get registration options (authed) |
 | POST | `/api/auth/passkeys/register/verify` | Verify registration (authed) |
-| POST | `/api/account/mfa/totp/enroll` | Start TOTP enrollment → `{ otpauthUri, recoveryCodes }` |
+| POST | `/api/account/mfa/totp/enroll` | Start TOTP enrollment |
 | POST | `/api/account/mfa/totp/verify` | Confirm enrollment with `{ otp }` |
 | DELETE | `/api/account/mfa/totp` | Disable TOTP with `{ password }` |
 | POST | `/api/account/mfa/recovery-codes/regenerate` | Regenerate codes with `{ password }` |
-| POST | `/api/auth/change-password` | Change password with `{ currentPassword, newPassword }` |
+| POST | `/api/auth/change-password` | Change password |
 
 ---
 
@@ -60,6 +66,7 @@
 **Files:**
 - Create: `apps/web/src/types/account.ts`
 - Create: `apps/web/src/app/(dashboard)/layout.tsx`
+- Create: `apps/web/src/components/account/dashboard-nav.tsx`
 
 - [ ] **Step 1: Define account types**
 
@@ -105,13 +112,9 @@ export interface RecoveryCodesResponse {
 }
 ```
 
-- [ ] **Step 2: Install additional shadcn components**
+Note: All shadcn components (dialog, table, badge, dropdown-menu, avatar, tooltip, tabs) come from `packages/ui` via path aliases — no local install needed.
 
-```bash
-cd apps/web && pnpm dlx shadcn@latest add dialog table badge dropdown-menu avatar tooltip tabs
-```
-
-- [ ] **Step 3: Create dashboard layout**
+- [ ] **Step 2: Create dashboard layout**
 
 Create `apps/web/src/app/(dashboard)/layout.tsx`:
 
@@ -134,7 +137,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="flex min-h-screen">
       <aside className="hidden w-64 border-r bg-muted/30 lg:block">
         <div className="flex h-14 items-center border-b px-6">
-          <Link href="/account" className="text-lg font-semibold">
+          <Link href="/account" className="font-display text-lg font-semibold">
             Identity
           </Link>
         </div>
@@ -148,9 +151,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
 }
 ```
 
-- [ ] **Step 4: Create nav component**
+- [ ] **Step 3: Create nav component**
 
 Create `apps/web/src/components/account/dashboard-nav.tsx`:
+
+No admin nav items — admin dashboard is a separate app (`apps/admin`).
 
 ```tsx
 'use client';
@@ -217,7 +222,7 @@ export function DashboardNav({ displayName, email }: DashboardNavProps) {
 }
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add -A && git commit -m "feat(web): add dashboard layout with sidebar navigation"
@@ -225,82 +230,9 @@ git add -A && git commit -m "feat(web): add dashboard layout with sidebar naviga
 
 ---
 
-## Task 2: Confirm Dialog Component
+## ~~Task 2: Confirm Dialog Component~~ — REMOVED
 
-**Files:**
-- Create: `apps/web/src/components/shared/confirm-dialog.tsx`
-
-- [ ] **Step 1: Install alert-dialog**
-
-```bash
-cd apps/web && pnpm dlx shadcn@latest add alert-dialog
-```
-
-- [ ] **Step 2: Create confirm dialog**
-
-Create `apps/web/src/components/shared/confirm-dialog.tsx`:
-
-```tsx
-'use client';
-
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
-import type { ReactNode } from 'react';
-
-interface ConfirmDialogProps {
-  trigger: ReactNode;
-  title: string;
-  description: string;
-  confirmLabel?: string;
-  variant?: 'destructive' | 'default';
-  onConfirm: () => void | Promise<void>;
-}
-
-export function ConfirmDialog({
-  trigger,
-  title,
-  description,
-  confirmLabel = 'Confirm',
-  variant = 'default',
-  onConfirm,
-}: ConfirmDialogProps) {
-  return (
-    <AlertDialog>
-      <AlertDialogTrigger asChild>{trigger}</AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={onConfirm}
-            className={variant === 'destructive' ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90' : ''}
-          >
-            {confirmLabel}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
-  );
-}
-```
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add -A && git commit -m "feat(web): add confirm dialog and shared components"
-```
+ConfirmDialog is in `packages/ui` (Phase 7-pre). Available via path alias `@/components/shared/confirm-dialog` — no local copy needed.
 
 ---
 
@@ -370,7 +302,7 @@ export function ProfileForm({ profile }: ProfileFormProps) {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
-        {mutation.error && <ApiErrorAlert error={mutation.error} />}
+        {mutation.error ? <ApiErrorAlert error={mutation.error} /> : null}
 
         <div className="space-y-2">
           <label className="text-sm font-medium text-muted-foreground">Email</label>
@@ -415,7 +347,7 @@ export default async function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Profile</h1>
+      <h1 className="font-display text-2xl font-bold">Profile</h1>
       <Card>
         <CardHeader>
           <CardTitle>Personal information</CardTitle>
@@ -454,8 +386,8 @@ Create `apps/web/src/components/account/session-list.tsx`:
 import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { clientFetch } from '@/lib/api-client';
 import type { SessionItem } from '@/types/account';
@@ -490,7 +422,7 @@ export function SessionList({ sessions }: SessionListProps) {
                   <p className="text-sm font-medium">
                     {session.userAgent ?? 'Unknown device'}
                   </p>
-                  {session.isCurrent && <Badge variant="secondary">Current</Badge>}
+                  {session.isCurrent ? <Badge variant="secondary">Current</Badge> : null}
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {session.ipAddress ?? 'Unknown IP'} · Last active{' '}
@@ -498,7 +430,7 @@ export function SessionList({ sessions }: SessionListProps) {
                 </p>
               </div>
             </div>
-            {!session.isCurrent && (
+            {!session.isCurrent ? (
               <ConfirmDialog
                 trigger={
                   <Button variant="ghost" size="icon" disabled={revokeMutation.isPending}>
@@ -506,18 +438,15 @@ export function SessionList({ sessions }: SessionListProps) {
                   </Button>
                 }
                 title="Revoke session"
-                description="This will sign out the device. The user will need to sign in again."
+                description="This will sign out the device. You cannot undo this."
                 confirmLabel="Revoke"
                 variant="destructive"
                 onConfirm={() => revokeMutation.mutate(session.id)}
               />
-            )}
+            ) : null}
           </CardContent>
         </Card>
       ))}
-      {sessions.length === 0 && (
-        <p className="text-sm text-muted-foreground">No active sessions.</p>
-      )}
     </div>
   );
 }
@@ -538,7 +467,7 @@ export default async function SessionsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Sessions</h1>
+      <h1 className="font-display text-2xl font-bold">Sessions</h1>
       <Card>
         <CardHeader>
           <CardTitle>Active sessions</CardTitle>
@@ -556,7 +485,7 @@ export default async function SessionsPage() {
 - [ ] **Step 3: Commit**
 
 ```bash
-git add -A && git commit -m "feat(web): add sessions page with revoke"
+git add -A && git commit -m "feat(web): add sessions page with revoke support"
 ```
 
 ---
@@ -619,6 +548,11 @@ export function PasskeyList({ passkeys }: PasskeyListProps) {
     },
   });
 
+  function startEdit(passkey: PasskeyItem) {
+    setEditingId(passkey.id);
+    setEditName(passkey.name ?? '');
+  }
+
   return (
     <div className="space-y-3">
       {passkeys.map((passkey) => (
@@ -633,20 +567,18 @@ export function PasskeyList({ passkeys }: PasskeyListProps) {
                       value={editName}
                       onChange={(e) => setEditName(e.target.value)}
                       className="h-7 w-48"
-                      autoFocus
                     />
                     <Button
-                      variant="ghost"
                       size="icon"
+                      variant="ghost"
                       className="h-7 w-7"
-                      disabled={editName.trim().length === 0}
-                      onClick={() => renameMutation.mutate({ id: passkey.id, name: editName.trim() })}
+                      onClick={() => renameMutation.mutate({ id: passkey.id, name: editName })}
                     >
                       <Check className="h-3 w-3" />
                     </Button>
                     <Button
-                      variant="ghost"
                       size="icon"
+                      variant="ghost"
                       className="h-7 w-7"
                       onClick={() => setEditingId(null)}
                     >
@@ -654,25 +586,19 @@ export function PasskeyList({ passkeys }: PasskeyListProps) {
                     </Button>
                   </div>
                 ) : (
-                  <p className="text-sm font-medium">{passkey.name ?? 'Unnamed passkey'}</p>
-                )}
-                <div className="flex items-center gap-2">
-                  <p className="text-xs text-muted-foreground">
-                    {passkey.deviceType} · Added {new Date(passkey.createdAt).toLocaleDateString()}
+                  <p className="text-sm font-medium">
+                    {passkey.name ?? 'Unnamed passkey'}
                   </p>
-                  {passkey.backedUp && <Badge variant="outline" className="text-xs">Synced</Badge>}
+                )}
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{passkey.deviceType}</span>
+                  {passkey.backedUp ? <Badge variant="outline">Backed up</Badge> : null}
+                  <span>Added {new Date(passkey.createdAt).toLocaleDateString()}</span>
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  setEditingId(passkey.id);
-                  setEditName(passkey.name ?? '');
-                }}
-              >
+              <Button variant="ghost" size="icon" onClick={() => startEdit(passkey)}>
                 <Pencil className="h-4 w-4" />
               </Button>
               <ConfirmDialog
@@ -682,7 +608,7 @@ export function PasskeyList({ passkeys }: PasskeyListProps) {
                   </Button>
                 }
                 title="Delete passkey"
-                description="You won't be able to sign in with this passkey anymore."
+                description="You will no longer be able to sign in with this passkey."
                 confirmLabel="Delete"
                 variant="destructive"
                 onConfirm={() => deleteMutation.mutate(passkey.id)}
@@ -691,46 +617,49 @@ export function PasskeyList({ passkeys }: PasskeyListProps) {
           </CardContent>
         </Card>
       ))}
-      {passkeys.length === 0 && (
-        <p className="text-sm text-muted-foreground">No passkeys registered yet.</p>
-      )}
+      {passkeys.length === 0 ? (
+        <p className="text-center text-sm text-muted-foreground py-8">
+          No passkeys registered. Add one below.
+        </p>
+      ) : null}
     </div>
   );
 }
 ```
 
-- [ ] **Step 2: Create passkey registration component**
+- [ ] **Step 2: Create passkey register component**
 
 Create `apps/web/src/components/account/passkey-register.tsx`:
+
+Best practice (`bundle-dynamic-imports`): `@simplewebauthn/browser` is dynamically imported.
 
 ```tsx
 'use client';
 
-import { startRegistration } from '@simplewebauthn/browser';
-import type { PublicKeyCredentialCreationOptionsJSON } from '@simplewebauthn/browser';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { LoadingButton } from '@/components/shared/loading-button';
-import { ApiErrorAlert } from '@/components/shared/api-error-alert';
-import { clientFetch, type ApiRequestError } from '@/lib/api-client';
-import { Plus } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { clientFetch } from '@/lib/api-client';
+import { Plus, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function PasskeyRegister() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<ApiRequestError | null>(null);
 
   async function handleRegister() {
     setLoading(true);
-    setError(null);
     try {
-      const options = await clientFetch<PublicKeyCredentialCreationOptionsJSON>(
+      const { startRegistration } = await import('@simplewebauthn/browser');
+
+      const options = await clientFetch<{ publicKey: unknown }>(
         '/api/auth/passkeys/register/options',
         { method: 'POST' },
       );
 
-      const credential = await startRegistration({ optionsJSON: options });
+      const credential = await startRegistration({
+        optionsJSON: options.publicKey as Parameters<typeof startRegistration>[0]['optionsJSON'],
+      });
 
       await clientFetch('/api/auth/passkeys/register/verify', {
         method: 'POST',
@@ -740,23 +669,19 @@ export function PasskeyRegister() {
       toast.success('Passkey registered');
       router.refresh();
     } catch (err) {
-      if (err instanceof Error && err.name === 'NotAllowedError') {
-        return;
+      if (err instanceof Error && err.name !== 'NotAllowedError') {
+        toast.error(err.message);
       }
-      setError(err as ApiRequestError);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="space-y-2">
-      <ApiErrorAlert error={error} />
-      <LoadingButton onClick={handleRegister} loading={loading} variant="outline">
-        <Plus className="mr-2 h-4 w-4" />
-        Register new passkey
-      </LoadingButton>
-    </div>
+    <Button onClick={handleRegister} disabled={loading}>
+      {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+      Add passkey
+    </Button>
   );
 }
 ```
@@ -778,16 +703,18 @@ export default async function PasskeysPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Passkeys</h1>
+        <h1 className="font-display text-2xl font-bold">Passkeys</h1>
+        <PasskeyRegister />
       </div>
       <Card>
         <CardHeader>
           <CardTitle>Your passkeys</CardTitle>
-          <CardDescription>Use passkeys to sign in without a password</CardDescription>
+          <CardDescription>
+            Passkeys let you sign in without a password using biometrics or a security key
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-6">
+        <CardContent>
           <PasskeyList passkeys={passkeys} />
-          <PasskeyRegister />
         </CardContent>
       </Card>
     </div>
@@ -803,7 +730,7 @@ git add -A && git commit -m "feat(web): add passkeys page with register, rename,
 
 ---
 
-## Task 6: Security Page — TOTP Enrollment
+## Task 6: Security Page (MFA + Password Change)
 
 **Files:**
 - Create: `apps/web/src/components/account/totp-enroll.tsx`
@@ -818,20 +745,22 @@ git add -A && git commit -m "feat(web): add passkeys page with register, rename,
 cd apps/web && pnpm add qrcode.react
 ```
 
-- [ ] **Step 2: Create TOTP enrollment component**
+- [ ] **Step 2: Create TOTP enroll component**
+
+Best practice (`bundle-dynamic-imports`): QR code component is dynamically imported since it's only needed during TOTP enrollment.
 
 Create `apps/web/src/components/account/totp-enroll.tsx`:
 
 ```tsx
 'use client';
 
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
+import { useRouter } from 'next/navigation';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { QRCodeSVG } from 'qrcode.react';
 import { z } from 'zod';
+import { Button } from '@/components/ui/button';
 import {
   Form,
   FormControl,
@@ -841,56 +770,69 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { LoadingButton } from '@/components/shared/loading-button';
 import { ApiErrorAlert } from '@/components/shared/api-error-alert';
-import { clientFetch, type ApiRequestError } from '@/lib/api-client';
+import { clientFetch, ApiRequestError } from '@/lib/api-client';
 import type { TotpEnrollResponse } from '@/types/account';
 import { toast } from 'sonner';
-import { Copy, ShieldCheck } from 'lucide-react';
 
-const otpSchema = z.object({
-  otp: z.string().length(6, 'Enter a 6-digit code'),
+const QRCodeSVG = dynamic(
+  () => import('qrcode.react').then((m) => ({ default: m.QRCodeSVG })),
+  { ssr: false, loading: () => <div className="h-48 w-48 animate-pulse bg-muted rounded" /> },
+);
+
+const verifySchema = z.object({
+  otp: z.string().length(6, 'Enter the 6-digit code'),
 });
 
-type OtpValues = z.infer<typeof otpSchema>;
+type VerifyValues = z.infer<typeof verifySchema>;
 
 export function TotpEnroll() {
   const router = useRouter();
   const [enrollData, setEnrollData] = useState<TotpEnrollResponse | null>(null);
-  const [error, setError] = useState<ApiRequestError | null>(null);
+  const [enrolling, setEnrolling] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
 
-  const enrollMutation = useMutation({
-    mutationFn: () =>
-      clientFetch<TotpEnrollResponse>('/api/account/mfa/totp/enroll', { method: 'POST' }),
-    onSuccess: (data) => setEnrollData(data),
-    onError: (err) => setError(err as ApiRequestError),
-  });
-
-  const form = useForm<OtpValues>({
-    resolver: zodResolver(otpSchema),
+  const form = useForm<VerifyValues>({
+    resolver: zodResolver(verifySchema),
     defaultValues: { otp: '' },
   });
 
-  const verifyMutation = useMutation({
-    mutationFn: (values: OtpValues) =>
-      clientFetch('/api/account/mfa/totp/verify', {
+  async function startEnroll() {
+    setEnrolling(true);
+    setError(null);
+    try {
+      const data = await clientFetch<TotpEnrollResponse>('/api/account/mfa/totp/enroll', {
+        method: 'POST',
+      });
+      setEnrollData(data);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error('Failed to start enrollment'));
+    } finally {
+      setEnrolling(false);
+    }
+  }
+
+  async function handleVerify(values: VerifyValues) {
+    try {
+      await clientFetch('/api/account/mfa/totp/verify', {
         method: 'POST',
         body: JSON.stringify(values),
-      }),
-    onSuccess: () => {
-      toast.success('TOTP enabled');
+      });
+      toast.success('Two-factor authentication enabled');
       router.refresh();
-    },
-  });
+    } catch (err) {
+      if (err instanceof ApiRequestError) {
+        setError(err);
+      }
+    }
+  }
 
   if (!enrollData) {
     return (
-      <div className="space-y-2">
-        <ApiErrorAlert error={error} />
-        <LoadingButton onClick={() => enrollMutation.mutate()} loading={enrollMutation.isPending}>
-          <ShieldCheck className="mr-2 h-4 w-4" />
+      <div className="space-y-4">
+        {error ? <ApiErrorAlert error={error} /> : null}
+        <LoadingButton onClick={startEnroll} loading={enrolling}>
           Enable two-factor authentication
         </LoadingButton>
       </div>
@@ -900,41 +842,15 @@ export function TotpEnroll() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col items-center gap-4">
-        <p className="text-sm text-muted-foreground">
-          Scan this QR code with your authenticator app
+        <QRCodeSVG value={enrollData.otpauthUri} size={192} />
+        <p className="text-sm text-muted-foreground text-center">
+          Scan with your authenticator app, then enter the code below
         </p>
-        <div className="rounded-lg border bg-white p-4">
-          <QRCodeSVG value={enrollData.otpauthUri} size={200} />
-        </div>
       </div>
 
-      <Alert>
-        <AlertTitle>Recovery codes</AlertTitle>
-        <AlertDescription>
-          <p className="mb-2">Save these codes somewhere safe. You can use them if you lose access to your authenticator app.</p>
-          <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-3 font-mono text-sm">
-            {enrollData.recoveryCodes.map((code) => (
-              <span key={code}>{code}</span>
-            ))}
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-2"
-            onClick={() => {
-              navigator.clipboard.writeText(enrollData.recoveryCodes.join('\n'));
-              toast.success('Copied to clipboard');
-            }}
-          >
-            <Copy className="mr-2 h-3 w-3" />
-            Copy codes
-          </Button>
-        </AlertDescription>
-      </Alert>
-
       <Form {...form}>
-        <form onSubmit={form.handleSubmit((v) => verifyMutation.mutate(v))} className="space-y-4">
-          {verifyMutation.error && <ApiErrorAlert error={verifyMutation.error} />}
+        <form onSubmit={form.handleSubmit(handleVerify)} className="space-y-4">
+          {error ? <ApiErrorAlert error={error} /> : null}
 
           <FormField
             control={form.control}
@@ -943,25 +859,30 @@ export function TotpEnroll() {
               <FormItem>
                 <FormLabel>Verification code</FormLabel>
                 <FormControl>
-                  <Input
-                    placeholder="000000"
-                    maxLength={6}
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    autoComplete="one-time-code"
-                    {...field}
-                  />
+                  <Input inputMode="numeric" maxLength={6} placeholder="000000" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>
             )}
           />
 
-          <LoadingButton type="submit" loading={verifyMutation.isPending}>
+          <LoadingButton type="submit" loading={form.formState.isSubmitting}>
             Verify and enable
           </LoadingButton>
         </form>
       </Form>
+
+      <div className="rounded-md border p-4">
+        <p className="text-sm font-medium mb-2">Recovery codes</p>
+        <p className="text-xs text-muted-foreground mb-3">
+          Save these codes in a safe place. Each can be used once if you lose your authenticator.
+        </p>
+        <div className="grid grid-cols-2 gap-1 font-mono text-sm">
+          {enrollData.recoveryCodes.map((code) => (
+            <span key={code}>{code}</span>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -975,7 +896,6 @@ Create `apps/web/src/components/account/totp-disable.tsx`:
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -990,8 +910,9 @@ import {
 import { PasswordInput } from '@/components/shared/password-input';
 import { LoadingButton } from '@/components/shared/loading-button';
 import { ApiErrorAlert } from '@/components/shared/api-error-alert';
-import { clientFetch } from '@/lib/api-client';
+import { clientFetch, ApiRequestError } from '@/lib/api-client';
 import { toast } from 'sonner';
+import { useState } from 'react';
 
 const disableSchema = z.object({
   password: z.string().min(1, 'Password is required'),
@@ -1001,45 +922,51 @@ type DisableValues = z.infer<typeof disableSchema>;
 
 export function TotpDisable() {
   const router = useRouter();
+  const [error, setError] = useState<Error | null>(null);
 
   const form = useForm<DisableValues>({
     resolver: zodResolver(disableSchema),
     defaultValues: { password: '' },
   });
 
-  const mutation = useMutation({
-    mutationFn: (values: DisableValues) =>
-      clientFetch('/api/account/mfa/totp', {
+  async function handleDisable(values: DisableValues) {
+    setError(null);
+    try {
+      await clientFetch('/api/account/mfa/totp', {
         method: 'DELETE',
         body: JSON.stringify(values),
-      }),
-    onSuccess: () => {
+      });
       toast.success('Two-factor authentication disabled');
       router.refresh();
-    },
-  });
+    } catch (err) {
+      if (err instanceof ApiRequestError) {
+        setError(err);
+      }
+    }
+  }
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
-        {mutation.error && <ApiErrorAlert error={mutation.error} />}
-
+      <form onSubmit={form.handleSubmit(handleDisable)} className="space-y-4">
+        {error ? <ApiErrorAlert error={error} /> : null}
+        <p className="text-sm text-muted-foreground">
+          Enter your password to disable two-factor authentication.
+        </p>
         <FormField
           control={form.control}
           name="password"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Confirm password to disable</FormLabel>
+              <FormLabel>Password</FormLabel>
               <FormControl>
-                <PasswordInput placeholder="Enter your password" autoComplete="current-password" {...field} />
+                <PasswordInput {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-
-        <LoadingButton type="submit" variant="destructive" loading={mutation.isPending}>
-          Disable two-factor authentication
+        <LoadingButton type="submit" variant="destructive" loading={form.formState.isSubmitting}>
+          Disable 2FA
         </LoadingButton>
       </form>
     </Form>
@@ -1054,11 +981,12 @@ Create `apps/web/src/components/account/recovery-codes.tsx`:
 ```tsx
 'use client';
 
-import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { Button } from '@/components/ui/button';
 import {
   Form,
   FormControl,
@@ -1067,89 +995,97 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Button } from '@/components/ui/button';
 import { PasswordInput } from '@/components/shared/password-input';
 import { LoadingButton } from '@/components/shared/loading-button';
-import { ApiErrorAlert } from '@/components/shared/api-error-alert';
 import { clientFetch } from '@/lib/api-client';
 import type { RecoveryCodesResponse } from '@/types/account';
 import { toast } from 'sonner';
-import { Copy } from 'lucide-react';
 
-const regenSchema = z.object({
+const regenerateSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
-type RegenValues = z.infer<typeof regenSchema>;
+type RegenerateValues = z.infer<typeof regenerateSchema>;
 
 export function RecoveryCodes() {
+  const router = useRouter();
   const [codes, setCodes] = useState<string[] | null>(null);
+  const [showForm, setShowForm] = useState(false);
 
-  const form = useForm<RegenValues>({
-    resolver: zodResolver(regenSchema),
+  const form = useForm<RegenerateValues>({
+    resolver: zodResolver(regenerateSchema),
     defaultValues: { password: '' },
   });
 
-  const mutation = useMutation({
-    mutationFn: (values: RegenValues) =>
-      clientFetch<RecoveryCodesResponse>('/api/account/mfa/recovery-codes/regenerate', {
+  async function handleRegenerate(values: RegenerateValues) {
+    const result = await clientFetch<RecoveryCodesResponse>(
+      '/api/account/mfa/recovery-codes/regenerate',
+      {
         method: 'POST',
         body: JSON.stringify(values),
-      }),
-    onSuccess: (data) => {
-      setCodes(data.recoveryCodes);
-      toast.success('Recovery codes regenerated');
-    },
-  });
+      },
+    );
+    setCodes(result.recoveryCodes);
+    setShowForm(false);
+    toast.success('Recovery codes regenerated');
+    router.refresh();
+  }
 
   if (codes) {
     return (
-      <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">Save these new recovery codes. Previous codes are now invalid.</p>
-        <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-3 font-mono text-sm">
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Save these codes. Your previous codes are no longer valid.
+        </p>
+        <div className="grid grid-cols-2 gap-1 rounded-md border p-4 font-mono text-sm">
           {codes.map((code) => (
             <span key={code}>{code}</span>
           ))}
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            navigator.clipboard.writeText(codes.join('\n'));
-            toast.success('Copied to clipboard');
-          }}
-        >
-          <Copy className="mr-2 h-3 w-3" />
-          Copy codes
+        <Button variant="outline" onClick={() => setCodes(null)}>
+          Done
         </Button>
       </div>
     );
   }
 
+  if (showForm) {
+    return (
+      <Form {...form}>
+        <form onSubmit={form.handleSubmit(handleRegenerate)} className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            This will invalidate your existing recovery codes.
+          </p>
+          <FormField
+            control={form.control}
+            name="password"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Password</FormLabel>
+                <FormControl>
+                  <PasswordInput {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <div className="flex gap-2">
+            <LoadingButton type="submit" variant="destructive" loading={form.formState.isSubmitting}>
+              Regenerate
+            </LoadingButton>
+            <Button variant="outline" onClick={() => setShowForm(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </Form>
+    );
+  }
+
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
-        {mutation.error && <ApiErrorAlert error={mutation.error} />}
-
-        <FormField
-          control={form.control}
-          name="password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Confirm password</FormLabel>
-              <FormControl>
-                <PasswordInput placeholder="Enter your password" autoComplete="current-password" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <LoadingButton type="submit" variant="outline" loading={mutation.isPending}>
-          Regenerate recovery codes
-        </LoadingButton>
-      </form>
-    </Form>
+    <Button variant="outline" onClick={() => setShowForm(true)}>
+      Regenerate recovery codes
+    </Button>
   );
 }
 ```
@@ -1182,10 +1118,10 @@ import { toast } from 'sonner';
 const changePasswordSchema = z
   .object({
     currentPassword: z.string().min(1, 'Current password is required'),
-    newPassword: z.string().min(8, 'Must be at least 8 characters'),
-    confirmPassword: z.string().min(1, 'Please confirm'),
+    newPassword: z.string().min(8, 'New password must be at least 8 characters'),
+    confirmPassword: z.string(),
   })
-  .refine((d) => d.newPassword === d.confirmPassword, {
+  .refine((data) => data.newPassword === data.confirmPassword, {
     message: 'Passwords do not match',
     path: ['confirmPassword'],
   });
@@ -1216,7 +1152,7 @@ export function ChangePasswordForm() {
   return (
     <Form {...form}>
       <form onSubmit={form.handleSubmit((v) => mutation.mutate(v))} className="space-y-4">
-        {mutation.error && <ApiErrorAlert error={mutation.error} />}
+        {mutation.error ? <ApiErrorAlert error={mutation.error} /> : null}
 
         <FormField
           control={form.control}
@@ -1225,7 +1161,7 @@ export function ChangePasswordForm() {
             <FormItem>
               <FormLabel>Current password</FormLabel>
               <FormControl>
-                <PasswordInput autoComplete="current-password" {...field} />
+                <PasswordInput {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -1239,7 +1175,7 @@ export function ChangePasswordForm() {
             <FormItem>
               <FormLabel>New password</FormLabel>
               <FormControl>
-                <PasswordInput autoComplete="new-password" {...field} />
+                <PasswordInput {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -1253,7 +1189,7 @@ export function ChangePasswordForm() {
             <FormItem>
               <FormLabel>Confirm new password</FormLabel>
               <FormControl>
-                <PasswordInput autoComplete="new-password" {...field} />
+                <PasswordInput {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -1275,60 +1211,43 @@ Create `apps/web/src/app/(dashboard)/account/security/page.tsx`:
 
 ```tsx
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { serverFetch } from '@/lib/api-client';
+import type { Profile } from '@/types/account';
 import { TotpEnroll } from '@/components/account/totp-enroll';
 import { TotpDisable } from '@/components/account/totp-disable';
 import { RecoveryCodes } from '@/components/account/recovery-codes';
 import { ChangePasswordForm } from '@/components/account/change-password-form';
-import { serverFetch } from '@/lib/api-client';
-import type { Profile } from '@/types/account';
-import { Badge } from '@/components/ui/badge';
 
 export default async function SecurityPage() {
   const profile = await serverFetch<Profile>('/api/account/profile');
-
-  // MFA status detection: The server's mfa.service sets metadata.mfaEnabled = true
-  // on successful TOTP enrollment and clears it on disable. If this convention
-  // isn't in place yet, add it to the server's mfa.service.ts enrollTotp/disableTotp
-  // methods. Alternatively, add a dedicated GET /api/account/mfa/status endpoint
-  // that checks if user has a TOTP secret row.
-  const mfaEnabled = (profile.metadata as Record<string, unknown>)?.mfaEnabled === true;
+  const hasMfa = profile.metadata?.mfaEnabled === true;
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Security</h1>
+      <h1 className="font-display text-2xl font-bold">Security</h1>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>Two-factor authentication</CardTitle>
-              <CardDescription>
-                Add an extra layer of security to your account
-              </CardDescription>
-            </div>
-            <Badge variant={mfaEnabled ? 'default' : 'secondary'}>
-              {mfaEnabled ? 'Enabled' : 'Disabled'}
-            </Badge>
-          </div>
+          <CardTitle>Two-factor authentication</CardTitle>
+          <CardDescription>
+            Add an extra layer of security with a TOTP authenticator app
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          {mfaEnabled ? <TotpDisable /> : <TotpEnroll />}
+        <CardContent className="space-y-4">
+          {hasMfa ? (
+            <>
+              <p className="text-sm text-green-600 font-medium">2FA is enabled</p>
+              <Separator />
+              <TotpDisable />
+              <Separator />
+              <RecoveryCodes />
+            </>
+          ) : (
+            <TotpEnroll />
+          )}
         </CardContent>
       </Card>
-
-      {mfaEnabled && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Recovery codes</CardTitle>
-            <CardDescription>
-              Generate new recovery codes if you&apos;ve lost access to your existing ones
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <RecoveryCodes />
-          </CardContent>
-        </Card>
-      )}
 
       <Card>
         <CardHeader>
@@ -1347,12 +1266,12 @@ export default async function SecurityPage() {
 - [ ] **Step 7: Commit**
 
 ```bash
-git add -A && git commit -m "feat(web): add security page with TOTP, recovery codes, and password change"
+git add -A && git commit -m "feat(web): add security page with MFA enrollment and password change"
 ```
 
 ---
 
-## Task 7: Playwright E2E Tests
+## Task 7: Account E2E Tests
 
 **Files:**
 - Create: `apps/web/e2e/account.spec.ts`
@@ -1364,64 +1283,39 @@ Create `apps/web/e2e/account.spec.ts`:
 ```typescript
 import { expect, test } from '@playwright/test';
 
-test.describe('Account Self-Service', () => {
+test.describe('Account Management', () => {
+  const email = `e2e-account-${Date.now()}@test.example`;
+
   test.beforeEach(async ({ page }) => {
-    // Register + login a fresh user
-    const email = `e2e-account-${Date.now()}@test.example`;
+    // Register + login
     await page.goto('/register');
-    await page.getByLabel(/name/i).fill('E2E Account User');
+    await page.getByLabel(/name/i).fill('Account User');
     await page.getByLabel(/email/i).fill(email);
     await page.getByLabel(/password/i).fill('TestPassword123!');
     await page.getByRole('button', { name: /create account/i }).click();
     await page.waitForURL(/\/(account|verify-email)/);
-
-    // If redirected to verify-email, navigate directly to account
-    // (in test mode, email verification may be skipped)
-    if (page.url().includes('verify-email')) {
-      await page.goto('/login');
-      await page.getByLabel(/email/i).fill(email);
-      await page.getByLabel(/password/i).fill('TestPassword123!');
-      await page.getByRole('button', { name: /sign in/i }).click();
-      await page.waitForURL(/\/account/);
-    }
   });
 
-  test('shows profile page with user info', async ({ page }) => {
+  test('shows profile page', async ({ page }) => {
     await page.goto('/account');
-    await expect(page.getByText('E2E Account User')).toBeVisible();
+    await expect(page.getByText(/profile/i)).toBeVisible();
+    await expect(page.getByText(email)).toBeVisible();
   });
 
-  test('updates display name', async ({ page }) => {
-    await page.goto('/account');
-    await page.getByLabel(/display name/i).clear();
-    await page.getByLabel(/display name/i).fill('Updated Name');
-    await page.getByRole('button', { name: /save/i }).click();
-    await expect(page.getByText(/updated/i)).toBeVisible();
-  });
-
-  test('lists sessions with current badge', async ({ page }) => {
+  test('shows sessions page', async ({ page }) => {
     await page.goto('/account/sessions');
     await expect(page.getByText(/current/i)).toBeVisible();
   });
 
-  test('passkeys page loads', async ({ page }) => {
+  test('shows passkeys page', async ({ page }) => {
     await page.goto('/account/passkeys');
     await expect(page.getByText(/passkeys/i)).toBeVisible();
   });
 
-  test('security page shows MFA toggle', async ({ page }) => {
+  test('shows security page', async ({ page }) => {
     await page.goto('/account/security');
     await expect(page.getByText(/two-factor/i)).toBeVisible();
     await expect(page.getByText(/change password/i)).toBeVisible();
-  });
-
-  test('changes password', async ({ page }) => {
-    await page.goto('/account/security');
-    await page.getByLabel(/current password/i).fill('TestPassword123!');
-    await page.getByLabel(/^new password/i).fill('NewPassword456!');
-    await page.getByLabel(/confirm/i).fill('NewPassword456!');
-    await page.getByRole('button', { name: /change password/i }).click();
-    await expect(page.getByText(/changed/i)).toBeVisible();
   });
 });
 ```
@@ -1435,7 +1329,7 @@ cd apps/web && pnpm e2e
 - [ ] **Step 3: Commit**
 
 ```bash
-git add -A && git commit -m "test(web): add account self-service E2E tests"
+git add -A && git commit -m "test(web): add account management E2E tests"
 ```
 
 ---
@@ -1443,18 +1337,10 @@ git add -A && git commit -m "test(web): add account self-service E2E tests"
 ## Task Dependency Graph
 
 ```
-Task 1 (types + layout) ── Task 2 (shared components)
-                                │
-                  ┌──────────── ┼ ──────────────┐
-                  │             │                │
-               Task 3       Task 4           Task 5
-             (profile)    (sessions)       (passkeys)
-                  │             │                │
-                  └──────────── ┼ ──────────────┘
-                                │
-                           Task 6 (security: TOTP + password)
-                                │
-                           Task 7 (Playwright E2E)
+Task 1 (types + layout + nav) ─┬─ Task 3 (profile) ─── can run after Task 1
+                                ├─ Task 4 (sessions) ─── can run after Task 2
+                                ├─ Task 5 (passkeys) ─── can run after Task 2
+                                └─ Task 6 (security) ─── can run after Task 2
+Task 2 (confirm dialog) ────────┘
+Task 7 (E2E tests) ──── depends on all above
 ```
-
-Tasks 3, 4, 5 can run **in parallel** after Task 2.

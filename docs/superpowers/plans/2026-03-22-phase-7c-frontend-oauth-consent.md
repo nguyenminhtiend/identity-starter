@@ -11,6 +11,10 @@
 **Prerequisite:** Plan 7a complete. Phase 5a OAuth API available.
 **Phase doc:** `docs/phase-7-frontend.md`
 
+**Vercel Best Practices:**
+- `rendering-conditional-render`: Ternary over `&&` for conditional JSX
+- `server-serialization`: Only pass needed fields from server to client
+
 ---
 
 ## File Map
@@ -227,14 +231,14 @@ export function ConsentForm({ data, authorizeParams }: ConsentFormProps) {
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
-          {data.client.logoUri && (
+          {data.client.logoUri ? (
             <img
               src={data.client.logoUri}
               alt={data.client.clientName}
               className="mx-auto mb-4 h-16 w-16 rounded-lg"
             />
-          )}
-          <CardTitle className="text-xl">
+          ) : null}
+          <CardTitle className="font-display text-xl">
             {data.client.clientName} wants to access your account
           </CardTitle>
           <CardDescription>
@@ -261,7 +265,7 @@ export function ConsentForm({ data, authorizeParams }: ConsentFormProps) {
             <Shield className="h-3 w-3" />
             <span>
               This will not share your password.{' '}
-              {data.client.policyUri && (
+              {data.client.policyUri ? (
                 <a
                   href={data.client.policyUri}
                   target="_blank"
@@ -270,10 +274,10 @@ export function ConsentForm({ data, authorizeParams }: ConsentFormProps) {
                 >
                   Privacy policy <ExternalLink className="h-3 w-3" />
                 </a>
-              )}
-              {data.client.tosUri && (
+              ) : null}
+              {data.client.tosUri ? (
                 <>
-                  {data.client.policyUri && ' · '}
+                  {data.client.policyUri ? ' · ' : null}
                   <a
                     href={data.client.tosUri}
                     target="_blank"
@@ -283,7 +287,7 @@ export function ConsentForm({ data, authorizeParams }: ConsentFormProps) {
                     Terms of service <ExternalLink className="h-3 w-3" />
                   </a>
                 </>
-              )}
+              ) : null}
             </span>
           </div>
         </CardContent>
