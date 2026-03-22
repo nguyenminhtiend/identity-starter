@@ -1,3 +1,4 @@
+import cookie from '@fastify/cookie';
 import { UnauthorizedError } from '@identity-starter/core';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
@@ -33,6 +34,7 @@ describe('passkey routes', () => {
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
+    await app.register(cookie);
 
     app.decorate('container', {
       db: {} as unknown as Container['db'],

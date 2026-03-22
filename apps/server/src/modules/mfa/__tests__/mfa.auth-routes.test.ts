@@ -1,3 +1,4 @@
+import cookie from '@fastify/cookie';
 import type { FastifyInstance } from 'fastify';
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
@@ -24,6 +25,7 @@ describe('mfa auth routes', () => {
     app = Fastify({ logger: false });
     app.setValidatorCompiler(validatorCompiler);
     app.setSerializerCompiler(serializerCompiler);
+    await app.register(cookie);
 
     app.decorate('container', {
       db: {} as unknown as Container['db'],
