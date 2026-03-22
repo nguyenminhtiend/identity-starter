@@ -1,4 +1,5 @@
 import cors from '@fastify/cors';
+import formbody from '@fastify/formbody';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
@@ -34,6 +35,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     credentials: true,
   });
   await app.register(helmet);
+  await app.register(formbody);
 
   if (env.NODE_ENV !== 'test') {
     await app.register(rateLimit, { max: 100, timeWindow: '1 minute' });
