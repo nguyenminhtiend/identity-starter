@@ -1,3 +1,4 @@
+import { UnauthorizedError } from '@identity-starter/core';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   authorizeWithPar: vi.fn(),
   createParRequest: vi.fn(),
   submitConsent: vi.fn(),
+  revokeConsent: vi.fn(),
   exchangeToken: vi.fn(),
   revokeToken: vi.fn(),
   endSession: vi.fn(),
@@ -45,6 +47,7 @@ vi.mock('../oauth.service.js', () => ({
     authorizeWithPar: mocks.authorizeWithPar,
     createParRequest: mocks.createParRequest,
     submitConsent: mocks.submitConsent,
+    revokeConsent: mocks.revokeConsent,
     exchangeToken: mocks.exchangeToken,
     revokeToken: mocks.revokeToken,
     endSession: mocks.endSession,
@@ -95,6 +98,10 @@ describe('oauth routes', () => {
     });
 
     app.decorate('requireSession', async (request: FastifyRequest) => {
+      const authHeader = request.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) {
+        throw new UnauthorizedError('Missing or invalid Authorization header');
+      }
       request.session = mockSession;
       request.userId = mockSession.userId;
     });
@@ -115,6 +122,7 @@ describe('oauth routes', () => {
     mocks.authorizeWithPar.mockReset();
     mocks.createParRequest.mockReset();
     mocks.submitConsent.mockReset();
+    mocks.revokeConsent.mockReset();
     mocks.exchangeToken.mockReset();
     mocks.revokeToken.mockReset();
     mocks.endSession.mockReset();
@@ -415,6 +423,32 @@ describe('oauth routes', () => {
 
       expect(response.statusCode).toBe(302);
       expect(response.headers.location).toBe('https://example.com/callback?code=x&state=y');
+    });
+  });
+
+  describe('DELETE /oauth/consent/:clientId', () => {
+    it('returns 204 when session is valid', async () => {
+      mocks.revokeConsent.mockResolvedValue(undefined);
+
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/oauth/consent/my-oauth-client-id',
+        headers: sessionHeaders,
+      });
+
+      expect(response.statusCode).toBe(204);
+      expect(response.body).toBe('');
+      expect(mocks.revokeConsent).toHaveBeenCalledWith(mockSession.userId, 'my-oauth-client-id');
+    });
+
+    it('returns 401 without session', async () => {
+      const response = await app.inject({
+        method: 'DELETE',
+        url: '/oauth/consent/my-oauth-client-id',
+      });
+
+      expect(response.statusCode).toBe(401);
+      expect(mocks.revokeConsent).not.toHaveBeenCalled();
     });
   });
 

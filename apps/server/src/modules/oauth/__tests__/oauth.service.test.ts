@@ -142,6 +142,8 @@ describe('oauth.service', () => {
     });
     refreshTokenService.rotateRefreshToken.mockReset();
     refreshTokenService.rotateRefreshToken.mockResolvedValue('rotated-refresh-plain');
+    refreshTokenService.revokeAllForClient.mockReset();
+    refreshTokenService.revokeAllForClient.mockResolvedValue(undefined);
     mocks.getClientByClientId.mockReset();
     mocks.getClient.mockReset();
     mocks.authenticateClient.mockReset();
@@ -359,6 +361,98 @@ describe('oauth.service', () => {
       expect(url.searchParams.get('error')).toBe('access_denied');
       expect(url.searchParams.get('state')).toBe('st-1');
       expect(insert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('revokeConsent', () => {
+    it('marks consent grant revoked, revokes refresh tokens for user+client, publishes event', async () => {
+      mocks.getClientByClientId.mockResolvedValue(baseClient());
+
+      const grantRow = {
+        id: '70000000-0000-7000-8000-000000000007',
+        userId: USER_ID,
+        clientId: INTERNAL_CLIENT_ID,
+        scope: 'openid',
+        revokedAt: null as Date | null,
+        createdAt: new Date(),
+      };
+
+      const consentSelect = createSelectWithLimit([grantRow]);
+      const updateWhere = vi.fn().mockResolvedValue(undefined);
+      const update = vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({ where: updateWhere }),
+      });
+
+      const db = {
+        select: vi.fn(() => consentSelect),
+        update,
+      } as never;
+
+      const publishSpy = vi.spyOn(eventBus, 'publish');
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      await service.revokeConsent(USER_ID, PUBLIC_CLIENT_ID);
+
+      expect(update).toHaveBeenCalled();
+      expect(updateWhere).toHaveBeenCalled();
+      expect(refreshTokenService.revokeAllForClient).toHaveBeenCalledWith(
+        INTERNAL_CLIENT_ID,
+        USER_ID,
+      );
+      expect(publishSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventName: OAUTH_EVENTS.CONSENT_REVOKED,
+          payload: { userId: USER_ID, clientId: PUBLIC_CLIENT_ID },
+        }),
+      );
+    });
+
+    it('throws NotFoundError when no active consent exists for user+client', async () => {
+      mocks.getClientByClientId.mockResolvedValue(baseClient());
+
+      const consentSelect = createSelectWithLimit([]);
+      const db = {
+        select: vi.fn(() => consentSelect),
+        update: vi.fn(),
+      } as never;
+
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      await expect(service.revokeConsent(USER_ID, PUBLIC_CLIENT_ID)).rejects.toThrow(NotFoundError);
+      expect(refreshTokenService.revokeAllForClient).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundError when consent was already revoked', async () => {
+      mocks.getClientByClientId.mockResolvedValue(baseClient());
+
+      const consentSelect = createSelectWithLimit([]);
+      const db = {
+        select: vi.fn(() => consentSelect),
+        update: vi.fn(),
+      } as never;
+
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      await expect(service.revokeConsent(USER_ID, PUBLIC_CLIENT_ID)).rejects.toThrow(NotFoundError);
+      expect(refreshTokenService.revokeAllForClient).not.toHaveBeenCalled();
     });
   });
 

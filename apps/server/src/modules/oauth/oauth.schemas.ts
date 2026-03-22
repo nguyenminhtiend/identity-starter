@@ -117,6 +117,10 @@ export const consentSchema = z.discriminatedUnion('decision', [
 
 export type ConsentInput = z.infer<typeof consentSchema>;
 
+export const consentClientIdParamSchema = z.object({
+  clientId: z.string().min(1),
+});
+
 export const revokeSchema = z.object({
   token: z.string().min(1),
   token_type_hint: z.enum(['refresh_token', 'access_token']).optional(),

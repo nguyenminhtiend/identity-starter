@@ -13,6 +13,7 @@ import { createRefreshTokenService } from '../token/refresh-token.service.js';
 import { createSigningKeyService } from '../token/signing-key.service.js';
 import {
   authorizeQuerySchema,
+  consentClientIdParamSchema,
   consentSchema,
   endSessionQuerySchema,
   introspectRequestSchema,
@@ -167,6 +168,20 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const result = await oauthService.submitConsent(request.userId, request.body);
       return reply.redirect(result.redirectUri, 302);
+    },
+  );
+
+  fastify.delete(
+    '/consent/:clientId',
+    {
+      preHandler: fastify.requireSession,
+      schema: {
+        params: consentClientIdParamSchema,
+      },
+    },
+    async (request, reply) => {
+      await oauthService.revokeConsent(request.userId, request.params.clientId);
+      return reply.status(204).send();
     },
   );
 

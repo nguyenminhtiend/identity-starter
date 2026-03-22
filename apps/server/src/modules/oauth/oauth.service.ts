@@ -407,6 +407,51 @@ async function submitConsent(
   return { type: 'redirect', redirectUri };
 }
 
+async function revokeConsent(
+  deps: OAuthServiceDeps,
+  userId: string,
+  clientId: string,
+): Promise<void> {
+  const client = await getClientByClientId(deps.db, clientId);
+
+  const [grant] = await deps.db
+    .select()
+    .from(consentGrants)
+    .where(
+      and(
+        eq(consentGrants.userId, userId),
+        eq(consentGrants.clientId, client.id),
+        isNull(consentGrants.revokedAt),
+      ),
+    )
+    .limit(1);
+
+  if (!grant) {
+    throw new NotFoundError('Consent', clientId);
+  }
+
+  const now = new Date();
+  await deps.db
+    .update(consentGrants)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(consentGrants.userId, userId),
+        eq(consentGrants.clientId, client.id),
+        isNull(consentGrants.revokedAt),
+      ),
+    );
+
+  await deps.refreshTokenService.revokeAllForClient(client.id, userId);
+
+  await deps.eventBus.publish(
+    createDomainEvent(OAUTH_EVENTS.CONSENT_REVOKED, {
+      userId,
+      clientId: client.clientId,
+    }),
+  );
+}
+
 async function validateConfidentialClient(
   db: Database,
   client: ClientResponse,
@@ -973,6 +1018,8 @@ export function createOAuthService(deps: OAuthServiceDeps) {
     createParRequest: (client: ClientResponse, body: ParRequestBody) =>
       createParRequestFlow(deps, client, body),
     submitConsent: (userId: string, input: ConsentInput) => submitConsent(deps, userId, input),
+    revokeConsent: (userId: string, oauthClientId: string) =>
+      revokeConsent(deps, userId, oauthClientId),
     exchangeToken: (request: TokenRequestInput, authenticatedClient: ClientResponse | null) =>
       exchangeToken(deps, request, authenticatedClient),
     revokeToken: (input: RevokeInput) => revokeToken(deps, input),
