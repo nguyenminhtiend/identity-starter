@@ -1,0 +1,1 @@
+ALTER TABLE "refresh_tokens" ADD COLUMN "rotation_grace_plaintext" text;
