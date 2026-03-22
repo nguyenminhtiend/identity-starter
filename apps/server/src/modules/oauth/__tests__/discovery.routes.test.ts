@@ -66,9 +66,26 @@ describe('discovery routes', () => {
       expect(body.token_endpoint).toBe('http://localhost:3000/oauth/token');
       expect(body.userinfo_endpoint).toBe('http://localhost:3000/oauth/userinfo');
       expect(body.revocation_endpoint).toBe('http://localhost:3000/oauth/revoke');
+      expect(body.introspection_endpoint).toBe('http://localhost:3000/oauth/introspect');
+      expect(body.end_session_endpoint).toBe('http://localhost:3000/oauth/end-session');
+      expect(body.pushed_authorization_request_endpoint).toBe('http://localhost:3000/oauth/par');
+      expect(body.require_pushed_authorization_requests).toBe(false);
       expect(body.jwks_uri).toBe('http://localhost:3000/.well-known/jwks.json');
       expect(body.response_types_supported).toEqual(['code']);
-      expect(body.grant_types_supported).toEqual(['authorization_code', 'refresh_token']);
+      expect(body.grant_types_supported).toEqual([
+        'authorization_code',
+        'refresh_token',
+        'client_credentials',
+      ]);
+      expect(body.dpop_signing_alg_values_supported).toEqual(['ES256', 'RS256']);
+      expect(body.introspection_endpoint_auth_methods_supported).toEqual([
+        'client_secret_basic',
+        'client_secret_post',
+      ]);
+      expect(body.revocation_endpoint_auth_methods_supported).toEqual([
+        'client_secret_basic',
+        'client_secret_post',
+      ]);
       expect(body.token_endpoint_auth_methods_supported).toEqual([
         'client_secret_basic',
         'client_secret_post',
