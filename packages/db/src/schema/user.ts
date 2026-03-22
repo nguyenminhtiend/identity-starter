@@ -10,6 +10,7 @@ export const users = pgTable('users', {
   status: text('status', { enum: ['active', 'suspended', 'pending_verification'] })
     .notNull()
     .default('pending_verification'),
+  isAdmin: boolean('is_admin').notNull().default(false),
   metadata: jsonb('metadata').notNull().default({}),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true })

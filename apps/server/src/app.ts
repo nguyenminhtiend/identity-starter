@@ -10,6 +10,7 @@ import {
 import { type Container, containerPlugin } from './core/container-plugin.js';
 import { env } from './core/env.js';
 import { registerModules } from './core/module-loader.js';
+import { adminPlugin } from './core/plugins/admin.js';
 import { authPlugin } from './core/plugins/auth.js';
 import { errorHandlerPlugin } from './core/plugins/error-handler.js';
 import { validateSession } from './modules/session/session.service.js';
@@ -41,6 +42,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(errorHandlerPlugin);
 
   await app.register(authPlugin, { validateSession });
+  await app.register(adminPlugin);
 
   app.get('/health', async () => ({ status: 'ok' }));
 

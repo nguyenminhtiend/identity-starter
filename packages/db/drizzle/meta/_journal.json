@@ -43,6 +43,13 @@
       "when": 1774139196336,
       "tag": "0005_minor_flatman",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774141631012,
+      "tag": "0006_real_hemingway",
+      "breakpoints": true
     }
   ]
 }
