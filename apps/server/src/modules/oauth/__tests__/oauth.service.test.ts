@@ -8,7 +8,7 @@ import * as jose from 'jose';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
 import type { ClientResponse } from '../../client/client.schemas.js';
-import { issueAccessToken } from '../../token/jwt.service.js';
+import { issueAccessToken, issueIdToken } from '../../token/jwt.service.js';
 import type { ActiveSigningKeyResult } from '../../token/signing-key.service.js';
 import { TOKEN_EVENTS } from '../../token/token.events.js';
 import { OAUTH_EVENTS } from '../oauth.events.js';
@@ -985,6 +985,187 @@ describe('oauth.service', () => {
         email: 'u@example.com',
         email_verified: true,
       });
+    });
+  });
+
+  describe('endSession', () => {
+    async function mintIdToken(overrides: { expiresInSeconds?: number } = {}): Promise<string> {
+      const expiresInSeconds = overrides.expiresInSeconds ?? 3600;
+      const accessToken = await issueAccessToken(testSigningKey, {
+        issuer: env.jwtIssuer,
+        subject: USER_ID,
+        audience: PUBLIC_CLIENT_ID,
+        scope: 'openid',
+        clientId: PUBLIC_CLIENT_ID,
+        expiresInSeconds,
+      });
+      return issueIdToken(testSigningKey, {
+        issuer: env.jwtIssuer,
+        subject: USER_ID,
+        audience: PUBLIC_CLIENT_ID,
+        nonce: 'n1',
+        authTime: Math.floor(Date.now() / 1000),
+        acr: '0',
+        amr: ['pwd'],
+        accessToken,
+        expiresInSeconds,
+      });
+    }
+
+    it('returns post_logout_redirect_uri with state when id_token_hint is valid and URI is registered', async () => {
+      const postLogout = 'https://example.com/logout';
+      mocks.getClientByClientId.mockResolvedValue(
+        baseClient({ redirectUris: ['https://example.com/callback', postLogout] }),
+      );
+
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const idToken = await mintIdToken();
+      const result = await service.endSession({
+        id_token_hint: idToken,
+        post_logout_redirect_uri: postLogout,
+        state: 'logout-state',
+      });
+
+      const url = new URL(result.redirectUri);
+      expect(url.origin + url.pathname).toBe('https://example.com/logout');
+      expect(url.searchParams.get('state')).toBe('logout-state');
+      expect(mocks.getClientByClientId).toHaveBeenCalledWith(db, PUBLIC_CLIENT_ID);
+    });
+
+    it('throws ValidationError when post_logout_redirect_uri is not registered for hinted client', async () => {
+      mocks.getClientByClientId.mockResolvedValue(baseClient());
+
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const idToken = await mintIdToken();
+
+      await expect(
+        service.endSession({
+          id_token_hint: idToken,
+          post_logout_redirect_uri: 'https://evil.com/after-logout',
+        }),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('returns registered post_logout_redirect_uri when id_token_hint is valid', async () => {
+      const postLogout = 'https://example.com/logout';
+      mocks.getClientByClientId.mockResolvedValue(
+        baseClient({ redirectUris: ['https://example.com/callback', postLogout] }),
+      );
+
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const idToken = await mintIdToken();
+      const result = await service.endSession({
+        id_token_hint: idToken,
+        post_logout_redirect_uri: postLogout,
+      });
+
+      expect(result.redirectUri).toBe(postLogout);
+    });
+
+    it('redirects to issuer when id_token_hint is omitted', async () => {
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const result = await service.endSession({
+        post_logout_redirect_uri: 'https://example.com/logout',
+      });
+
+      expect(result.redirectUri).toBe(env.jwtIssuer);
+      expect(mocks.getClientByClientId).not.toHaveBeenCalled();
+    });
+
+    it('redirects to issuer when id_token_hint is invalid or expired (ignores post_logout_redirect_uri)', async () => {
+      mocks.getClientByClientId.mockResolvedValue(
+        baseClient({
+          redirectUris: ['https://example.com/callback', 'https://example.com/logout'],
+        }),
+      );
+
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const expiredJwt = await mintIdToken({ expiresInSeconds: -3600 });
+
+      await expect(
+        service.endSession({
+          id_token_hint: 'not.a.valid.jwt',
+          post_logout_redirect_uri: 'https://example.com/logout',
+        }),
+      ).resolves.toEqual({ redirectUri: env.jwtIssuer });
+
+      await expect(
+        service.endSession({
+          id_token_hint: expiredJwt,
+          post_logout_redirect_uri: 'https://example.com/logout',
+        }),
+      ).resolves.toEqual({ redirectUri: env.jwtIssuer });
+
+      expect(mocks.getClientByClientId).not.toHaveBeenCalled();
+    });
+
+    it('returns the same redirect when invoked repeatedly with the same parameters', async () => {
+      const postLogout = 'https://example.com/logout';
+      mocks.getClientByClientId.mockResolvedValue(
+        baseClient({ redirectUris: ['https://example.com/callback', postLogout] }),
+      );
+
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const idToken = await mintIdToken();
+      const params = {
+        id_token_hint: idToken,
+        post_logout_redirect_uri: postLogout,
+        state: 's',
+      };
+
+      const first = await service.endSession(params);
+      const second = await service.endSession(params);
+
+      expect(first).toEqual(second);
+      expect(second.redirectUri).toContain('state=s');
     });
   });
 

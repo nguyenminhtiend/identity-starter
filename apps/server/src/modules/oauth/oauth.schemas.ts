@@ -170,3 +170,11 @@ export const introspectResponseSchema = z.object({
 
 export type IntrospectRequest = z.infer<typeof introspectRequestSchema>;
 export type IntrospectResponse = z.infer<typeof introspectResponseSchema>;
+
+export const endSessionQuerySchema = z.object({
+  id_token_hint: z.string().optional(),
+  post_logout_redirect_uri: z.string().optional(),
+  state: z.string().optional(),
+});
+
+export type EndSessionQuery = z.infer<typeof endSessionQuerySchema>;

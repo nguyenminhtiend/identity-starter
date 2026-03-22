@@ -7,12 +7,14 @@ import * as jose from 'jose';
 import { env } from '../../core/env.js';
 import type { ClientResponse } from '../client/client.schemas.js';
 import { authenticateClient } from '../client/client.service.js';
+import { revokeSession, validateSession } from '../session/session.service.js';
 import { verifyAccessToken } from '../token/jwt.service.js';
 import { createRefreshTokenService } from '../token/refresh-token.service.js';
 import { createSigningKeyService } from '../token/signing-key.service.js';
 import {
   authorizeQuerySchema,
   consentSchema,
+  endSessionQuerySchema,
   introspectRequestSchema,
   introspectResponseSchema,
   parRequestSchema,
@@ -211,6 +213,32 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       }
       await oauthService.revokeToken(revokeInput);
       return reply.status(200).send();
+    },
+  );
+
+  fastify.get(
+    '/end-session',
+    {
+      schema: {
+        querystring: endSessionQuerySchema,
+      },
+    },
+    async (request, reply) => {
+      const authHeader = request.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) {
+        const sessionToken = authHeader.slice(7);
+        try {
+          const session = await validateSession(db, sessionToken);
+          if (session) {
+            await revokeSession(db, eventBus, session.id);
+          }
+        } catch {
+          // Session may already be destroyed — ignore
+        }
+      }
+
+      const result = await oauthService.endSession(request.query);
+      return reply.redirect(result.redirectUri, 302);
     },
   );
 

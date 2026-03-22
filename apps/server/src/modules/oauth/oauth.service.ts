@@ -31,6 +31,7 @@ import { OAUTH_EVENTS } from './oauth.events.js';
 import type {
   AuthorizeQueryInput,
   ConsentInput,
+  EndSessionQuery,
   IntrospectResponse,
   ParRequestBody,
   RevokeInput,
@@ -882,6 +883,62 @@ async function introspectToken(
   return inactive;
 }
 
+function audienceClientIdFromPayload(aud: jose.JWTPayload['aud']): string | undefined {
+  if (typeof aud === 'string') {
+    return aud;
+  }
+  if (Array.isArray(aud) && aud.length > 0 && typeof aud[0] === 'string') {
+    return aud[0];
+  }
+  return undefined;
+}
+
+async function endSession(
+  deps: OAuthServiceDeps,
+  params: EndSessionQuery,
+): Promise<{ redirectUri: string }> {
+  let validatedClientId: string | undefined;
+
+  if (params.id_token_hint) {
+    try {
+      const jwks = await deps.signingKeyService.getJwks();
+      const localJwks = jose.createLocalJWKSet(jwks);
+      const result = await verifyAccessToken(localJwks, params.id_token_hint, deps.env.jwtIssuer);
+      if (result) {
+        validatedClientId = audienceClientIdFromPayload(result.payload.aud);
+      }
+    } catch {
+      // Invalid token or JWKS failure — proceed without client validation
+    }
+  }
+
+  if (params.post_logout_redirect_uri && validatedClientId) {
+    try {
+      const client = await getClientByClientId(deps.db, validatedClientId);
+      if (!client.redirectUris.includes(params.post_logout_redirect_uri)) {
+        throw new ValidationError('post_logout_redirect_uri is not registered', {
+          post_logout_redirect_uri: 'Invalid',
+        });
+      }
+    } catch (error) {
+      if (error instanceof ValidationError) {
+        throw error;
+      }
+      validatedClientId = undefined;
+    }
+  }
+
+  if (params.post_logout_redirect_uri && validatedClientId) {
+    const url = new URL(params.post_logout_redirect_uri);
+    if (params.state !== undefined) {
+      url.searchParams.set('state', params.state);
+    }
+    return { redirectUri: url.toString() };
+  }
+
+  return { redirectUri: deps.env.jwtIssuer };
+}
+
 async function getUserInfo(
   deps: OAuthServiceDeps,
   userId: string,
@@ -922,6 +979,7 @@ export function createOAuthService(deps: OAuthServiceDeps) {
     getUserInfo: (userId: string, scope: string) => getUserInfo(deps, userId, scope),
     introspectToken: (token: string, tokenTypeHint?: string) =>
       introspectToken(deps, token, tokenTypeHint),
+    endSession: (params: EndSessionQuery) => endSession(deps, params),
   };
 }
 

@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   submitConsent: vi.fn(),
   exchangeToken: vi.fn(),
   revokeToken: vi.fn(),
+  endSession: vi.fn(),
   getUserInfo: vi.fn(),
   introspectToken: vi.fn(),
   getJwks: vi.fn(),
@@ -46,6 +47,7 @@ vi.mock('../oauth.service.js', () => ({
     submitConsent: mocks.submitConsent,
     exchangeToken: mocks.exchangeToken,
     revokeToken: mocks.revokeToken,
+    endSession: mocks.endSession,
     getUserInfo: mocks.getUserInfo,
     introspectToken: mocks.introspectToken,
   })),
@@ -68,6 +70,11 @@ vi.mock('../../token/jwt.service.js', () => ({
 
 vi.mock('../../client/client.service.js', () => ({
   authenticateClient: mocks.authenticateClient,
+}));
+
+vi.mock('../../session/session.service.js', () => ({
+  validateSession: vi.fn().mockResolvedValue(null),
+  revokeSession: vi.fn().mockResolvedValue(undefined),
 }));
 
 import { oauthRoutes } from '../oauth.routes.js';
@@ -110,6 +117,8 @@ describe('oauth routes', () => {
     mocks.submitConsent.mockReset();
     mocks.exchangeToken.mockReset();
     mocks.revokeToken.mockReset();
+    mocks.endSession.mockReset();
+    mocks.endSession.mockResolvedValue({ redirectUri: 'http://localhost:3000' });
     mocks.getUserInfo.mockReset();
     mocks.introspectToken.mockReset();
     mocks.getJwks.mockReset();
@@ -526,6 +535,57 @@ describe('oauth routes', () => {
 
       expect(response.statusCode).toBe(401);
       expect(mocks.revokeToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /oauth/end-session', () => {
+    it('returns 302 when id_token_hint is present', async () => {
+      mocks.endSession.mockResolvedValue({
+        redirectUri: 'https://example.com/logout?state=s',
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/oauth/end-session',
+        query: { id_token_hint: 'header.payload.sig' },
+      });
+
+      expect(response.statusCode).toBe(302);
+      expect(response.headers.location).toBe('https://example.com/logout?state=s');
+      expect(mocks.endSession).toHaveBeenCalledWith(
+        expect.objectContaining({ id_token_hint: 'header.payload.sig' }),
+      );
+    });
+
+    it('returns 302 redirect to issuer when id_token_hint is omitted', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/oauth/end-session',
+      });
+
+      expect(response.statusCode).toBe(302);
+      expect(response.headers.location).toBe('http://localhost:3000');
+      expect(mocks.endSession).toHaveBeenCalledWith({});
+    });
+
+    it('passes post_logout_redirect_uri and reflects it in the redirect location', async () => {
+      const target = 'https://client.example/after-logout?state=st';
+      mocks.endSession.mockResolvedValue({ redirectUri: target });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/oauth/end-session',
+        query: { post_logout_redirect_uri: 'https://client.example/after-logout', state: 'st' },
+      });
+
+      expect(response.statusCode).toBe(302);
+      expect(response.headers.location).toBe(target);
+      expect(mocks.endSession).toHaveBeenCalledWith(
+        expect.objectContaining({
+          post_logout_redirect_uri: 'https://client.example/after-logout',
+          state: 'st',
+        }),
+      );
     });
   });
 
