@@ -4,13 +4,29 @@ pnpm = "10.32.1"
 
 # ── Dev ──────────────────────────────────────────────────
 [tasks.dev]
-description = "Start server in dev mode (watch)"
+description = "Start all apps in dev mode (turbo)"
 run = "pnpm dev"
+
+[tasks."dev:server"]
+description = "Start API server in dev mode"
+run = "pnpm --filter @identity-starter/server dev"
+
+[tasks."dev:web"]
+description = "Start web app in dev mode"
+run = "pnpm --filter @identity-starter/web dev"
 
 # ── Build ────────────────────────────────────────────────
 [tasks.build]
 description = "Build all packages"
 run = "pnpm build"
+
+[tasks."build:server"]
+description = "Build the API server"
+run = "pnpm --filter @identity-starter/server build"
+
+[tasks."build:web"]
+description = "Build the web app"
+run = "pnpm --filter @identity-starter/web build"
 
 # ── Test ─────────────────────────────────────────────────
 [tasks.test]
@@ -18,16 +34,20 @@ description = "Run all tests"
 run = "pnpm test"
 
 [tasks."test:unit"]
-description = "Run unit tests only"
+description = "Run unit tests (server)"
 run = "pnpm --filter @identity-starter/server test:unit"
 
 [tasks."test:integration"]
-description = "Run integration tests only"
+description = "Run integration tests (server)"
 run = "pnpm --filter @identity-starter/server test:integration"
 
 [tasks."test:watch"]
-description = "Run unit tests in watch mode"
+description = "Run unit tests in watch mode (server)"
 run = "pnpm --filter @identity-starter/server test:watch"
+
+[tasks."test:e2e"]
+description = "Run Playwright e2e tests (web)"
+run = "pnpm --filter @identity-starter/web e2e"
 
 # ── Database ─────────────────────────────────────────────
 [tasks."db:migrate"]
@@ -47,11 +67,46 @@ run = "pnpm lint"
 description = "Lint and auto-fix all files"
 run = "pnpm lint:fix"
 
-# ── Misc ────────────────────────────────────────────────
+# ── Typecheck ───────────────────────────────────────────
 [tasks.typecheck]
 description = "Type-check all packages"
-run = "pnpm turbo run build"
+run = "pnpm typecheck"
 
+[tasks."typecheck:server"]
+description = "Type-check the API server"
+run = "pnpm --filter @identity-starter/server typecheck"
+
+# ── Per-package shortcuts ───────────────────────────────
+[tasks."server"]
+description = "Run any script in server (usage: mise run server <script>)"
+run = "pnpm --filter @identity-starter/server"
+
+[tasks."web"]
+description = "Run any script in web (usage: mise run web <script>)"
+run = "pnpm --filter @identity-starter/web"
+
+[tasks."db"]
+description = "Run any script in db (usage: mise run db <script>)"
+run = "pnpm --filter @identity-starter/db"
+
+# ── Docker ──────────────────────────────────────────────
+[tasks."docker:up"]
+description = "Start Postgres + Redis (infra only)"
+run = "docker compose up postgres redis -d"
+
+[tasks."docker:down"]
+description = "Stop all docker services"
+run = "docker compose down"
+
+[tasks."docker:full"]
+description = "Start full stack via docker compose"
+run = "docker compose up -d"
+
+# ── Misc ────────────────────────────────────────────────
 [tasks.install]
 description = "Install dependencies"
 run = "pnpm install"
+
+[tasks.clean]
+description = "Remove build artifacts"
+run = "rm -rf apps/server/dist apps/web/.next packages/*/dist node_modules/.cache"
