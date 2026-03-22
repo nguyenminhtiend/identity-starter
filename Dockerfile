@@ -53,7 +53,7 @@ COPY --from=build /app/packages/db/dist ./packages/db/dist
 COPY --from=build /app/packages/db/drizzle ./packages/db/drizzle
 COPY --from=build /app/packages/db/package.json ./packages/db/
 
-COPY scripts/migrate.sh ./scripts/
+COPY scripts/ ./scripts/
 
 RUN chown -R appuser:appgroup /app
 
