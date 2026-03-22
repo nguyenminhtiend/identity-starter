@@ -13,6 +13,7 @@
     "test:watch": "vitest --project unit"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.2.0",
     "@fastify/formbody": "^8.0.2",
     "@fastify/helmet": "^13.0.2",

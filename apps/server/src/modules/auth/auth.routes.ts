@@ -1,4 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import { env } from '../../core/env.js';
+import { clearSessionCookie, setSessionCookie } from '../../core/plugins/auth.js';
 import {
   authResponseSchema,
   changePasswordSchema,
@@ -38,6 +40,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     },
     async (request, reply) => {
       const result = await authService.register(request.body);
+      setSessionCookie(reply, result.token, env.SESSION_TTL_SECONDS);
       return reply.status(201).send(result);
     },
   );
@@ -56,6 +59,9 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
         ipAddress: request.ip,
         userAgent: request.headers['user-agent'],
       });
+      if ('token' in result && !('mfaRequired' in result)) {
+        setSessionCookie(reply, result.token, env.SESSION_TTL_SECONDS);
+      }
       return reply.status(200).send(result);
     },
   );
@@ -92,6 +98,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
 
   fastify.post('/logout', { preHandler: fastify.requireSession }, async (request, reply) => {
     await authService.logout(request.session.id, request.userId);
+    clearSessionCookie(reply);
     return reply.status(204).send();
   });
 

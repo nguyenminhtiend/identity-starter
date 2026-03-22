@@ -10,6 +10,7 @@ const EnvSchema = z.object({
   WEBAUTHN_RP_NAME: z.string().default('Identity Starter'),
   WEBAUTHN_RP_ID: z.string().default('localhost'),
   WEBAUTHN_ORIGIN: z.url().default('http://localhost:3000'),
+  COOKIE_SECRET: z.string().default('change-me-in-production'),
   SESSION_TTL_SECONDS: z.coerce.number().default(604800),
   JWT_ISSUER: z.url().default('http://localhost:3000'),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().default(3600),
