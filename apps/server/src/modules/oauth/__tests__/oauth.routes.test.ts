@@ -1,4 +1,4 @@
-import { UnauthorizedError } from '@identity-starter/core';
+import { UnauthorizedError, ValidationError } from '@identity-starter/core';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   getJwks: vi.fn(),
   verifyAccessToken: vi.fn(),
   authenticateClient: vi.fn(),
+  validateDpopProof: vi.fn(),
 }));
 
 vi.mock('../../../core/env.js', () => ({
@@ -69,6 +70,10 @@ vi.mock('../../token/refresh-token.service.js', () => ({
 
 vi.mock('../../token/jwt.service.js', () => ({
   verifyAccessToken: mocks.verifyAccessToken,
+}));
+
+vi.mock('../../token/dpop.service.js', () => ({
+  validateDpopProof: mocks.validateDpopProof,
 }));
 
 vi.mock('../../client/client.service.js', () => ({
@@ -132,6 +137,7 @@ describe('oauth routes', () => {
     mocks.getJwks.mockReset();
     mocks.verifyAccessToken.mockReset();
     mocks.authenticateClient.mockReset();
+    mocks.validateDpopProof.mockReset();
     mocks.getJwks.mockResolvedValue({ keys: [] });
   });
 
@@ -299,7 +305,8 @@ describe('oauth routes', () => {
 
       expect(response.statusCode).toBe(200);
       expect(JSON.parse(response.body)).toMatchObject(tokenResponse);
-      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null);
+      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null, undefined);
+      expect(mocks.validateDpopProof).not.toHaveBeenCalled();
       expect(response.headers['access-control-allow-origin']).toBe(origin);
       expect(response.headers['access-control-allow-methods']).toBe('POST');
       expect(response.headers['access-control-allow-credentials']).toBe('true');
@@ -318,7 +325,87 @@ describe('oauth routes', () => {
       });
 
       expect(response.statusCode).toBe(200);
-      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null);
+      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null, undefined);
+      expect(mocks.validateDpopProof).not.toHaveBeenCalled();
+    });
+
+    it('validates DPoP proof and passes jkt when DPoP header is present', async () => {
+      const body = buildTokenRequestAuthCode();
+      mocks.authenticateClient.mockResolvedValue(null);
+      mocks.validateDpopProof.mockResolvedValue({
+        jkt: 'test-thumbprint',
+        publicKey: {},
+      });
+      mocks.exchangeToken.mockResolvedValue({
+        access_token: 'at',
+        token_type: 'DPoP',
+        expires_in: 3600,
+        scope: 'openid',
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/token',
+        headers: { 'content-type': 'application/json', dpop: 'dpop-proof-jwt' },
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body)).toMatchObject({
+        access_token: 'at',
+        token_type: 'DPoP',
+        expires_in: 3600,
+        scope: 'openid',
+      });
+      expect(mocks.validateDpopProof).toHaveBeenCalledWith('dpop-proof-jwt', {
+        htm: 'POST',
+        htu: 'http://localhost:3000/oauth/token',
+      });
+      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null, 'test-thumbprint');
+    });
+
+    it('returns 400 when DPoP proof is invalid', async () => {
+      const body = buildTokenRequestAuthCode();
+      mocks.authenticateClient.mockResolvedValue(null);
+      mocks.validateDpopProof.mockRejectedValue(
+        new ValidationError('Invalid DPoP proof', { dpop: 'Invalid' }),
+      );
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/token',
+        headers: { 'content-type': 'application/json', dpop: 'bad' },
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(mocks.exchangeToken).not.toHaveBeenCalled();
+    });
+
+    it('passes DPoP jkt to exchangeToken on refresh_token grant', async () => {
+      const body = buildTokenRequestRefresh();
+      mocks.authenticateClient.mockResolvedValue(null);
+      mocks.validateDpopProof.mockResolvedValue({
+        jkt: 'bound-jkt',
+        publicKey: {},
+      });
+      mocks.exchangeToken.mockResolvedValue({
+        access_token: 'at2',
+        token_type: 'DPoP',
+        expires_in: 3600,
+        scope: 'openid',
+        refresh_token: 'rt2',
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/token',
+        headers: { 'content-type': 'application/json', dpop: 'refresh-dpop-proof' },
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null, 'bound-jkt');
     });
 
     it('authenticates with client_secret_basic via Authorization header', async () => {
@@ -358,7 +445,7 @@ describe('oauth routes', () => {
 
       expect(response.statusCode).toBe(200);
       expect(mocks.authenticateClient).toHaveBeenCalledWith(expect.anything(), 'cid', 'secret');
-      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, authed);
+      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, authed, undefined);
     });
 
     it('authenticates with client_secret_post via body', async () => {
@@ -402,7 +489,7 @@ describe('oauth routes', () => {
         'post-cid',
         'post-secret',
       );
-      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, authed);
+      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, authed, undefined);
     });
   });
 
@@ -505,6 +592,36 @@ describe('oauth routes', () => {
       expect(mocks.authenticateClient).toHaveBeenCalledWith(expect.anything(), 'cid', 'secret');
       expect(mocks.introspectToken).toHaveBeenCalledWith('opaque-at', undefined);
       expect(response.headers['access-control-allow-origin']).toBe(origin);
+    });
+
+    it('returns cnf.jkt for DPoP-bound access token introspection', async () => {
+      mocks.authenticateClient.mockResolvedValue(authed);
+      const introspection = {
+        active: true,
+        sub: mockSession.userId,
+        client_id: 'cid',
+        scope: 'openid',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        iat: Math.floor(Date.now() / 1000),
+        iss: 'http://localhost:3000',
+        token_type: 'DPoP+access_token',
+        cnf: { jkt: 'dpop-key-thumb' },
+      };
+      mocks.introspectToken.mockResolvedValue(introspection);
+
+      const basic = Buffer.from('cid:secret').toString('base64');
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/introspect',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Basic ${basic}`,
+        },
+        payload: { token: 'dpop-access-jwt' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body)).toEqual(introspection);
     });
 
     it('returns 401 when client authentication is missing', async () => {
@@ -654,6 +771,92 @@ describe('oauth routes', () => {
       const response = await app.inject({
         method: 'GET',
         url: '/oauth/userinfo',
+      });
+
+      expect(response.statusCode).toBe(401);
+    });
+
+    it('returns 200 when Authorization: DPoP and DPoP proof match access token binding', async () => {
+      const accessJwt = 'header.payload.sig';
+      mocks.verifyAccessToken.mockResolvedValue({
+        payload: {
+          sub: mockSession.userId,
+          scope: 'openid profile email',
+          cnf: { jkt: 'test-thumbprint' },
+        },
+        protectedHeader: { alg: 'RS256' },
+      });
+      mocks.validateDpopProof.mockResolvedValue({
+        jkt: 'test-thumbprint',
+        publicKey: {},
+      });
+      mocks.getUserInfo.mockResolvedValue({
+        sub: mockSession.userId,
+        email: 'u@example.com',
+        email_verified: true,
+        name: 'User',
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/oauth/userinfo',
+        headers: {
+          authorization: `DPoP ${accessJwt}`,
+          dpop: 'userinfo-dpop-proof',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.sub).toBe(mockSession.userId);
+      expect(mocks.validateDpopProof).toHaveBeenCalledWith('userinfo-dpop-proof', {
+        htm: 'GET',
+        htu: 'http://localhost:3000/oauth/userinfo',
+        accessToken: accessJwt,
+      });
+    });
+
+    it('returns 401 when DPoP Authorization is missing DPoP proof header', async () => {
+      mocks.verifyAccessToken.mockResolvedValue({
+        payload: {
+          sub: mockSession.userId,
+          scope: 'openid',
+          cnf: { jkt: 'test-thumbprint' },
+        },
+        protectedHeader: { alg: 'RS256' },
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/oauth/userinfo',
+        headers: { authorization: 'DPoP access.jwt.token' },
+      });
+
+      expect(response.statusCode).toBe(401);
+      expect(mocks.validateDpopProof).not.toHaveBeenCalled();
+    });
+
+    it('returns 401 when DPoP jkt does not match token cnf', async () => {
+      mocks.verifyAccessToken.mockResolvedValue({
+        payload: {
+          sub: mockSession.userId,
+          scope: 'openid',
+          cnf: { jkt: 'expected-jkt' },
+        },
+        protectedHeader: { alg: 'RS256' },
+      });
+      mocks.validateDpopProof.mockResolvedValue({
+        jkt: 'other-jkt',
+        publicKey: {},
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/oauth/userinfo',
+        headers: {
+          authorization: 'DPoP token',
+          dpop: 'proof',
+        },
       });
 
       expect(response.statusCode).toBe(401);

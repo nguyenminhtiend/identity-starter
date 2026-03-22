@@ -8,6 +8,7 @@ import { env } from '../../core/env.js';
 import type { ClientResponse } from '../client/client.schemas.js';
 import { authenticateClient } from '../client/client.service.js';
 import { revokeSession, validateSession } from '../session/session.service.js';
+import { validateDpopProof } from '../token/dpop.service.js';
 import { verifyAccessToken } from '../token/jwt.service.js';
 import { createRefreshTokenService } from '../token/refresh-token.service.js';
 import { createSigningKeyService } from '../token/signing-key.service.js';
@@ -152,7 +153,18 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
     },
     async (request, reply) => {
       const authenticatedClient = await resolveAuthenticatedClient(db, request, request.body);
-      const tokens = await oauthService.exchangeToken(request.body, authenticatedClient);
+      const dpopHeader = request.headers.dpop;
+      const dpopProof = typeof dpopHeader === 'string' ? dpopHeader : undefined;
+      let dpopJkt: string | undefined;
+      if (dpopProof !== undefined) {
+        const issuerBase = env.JWT_ISSUER.replace(/\/$/, '');
+        const dpopResult = await validateDpopProof(dpopProof, {
+          htm: 'POST',
+          htu: `${issuerBase}/oauth/token`,
+        });
+        dpopJkt = dpopResult.jkt;
+      }
+      const tokens = await oauthService.exchangeToken(request.body, authenticatedClient, dpopJkt);
       return reply.status(200).send(tokens);
     },
   );
@@ -266,15 +278,38 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
     },
     async (request, reply) => {
       const authHeader = request.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) {
+      let token: string;
+      let isDpop = false;
+      if (authHeader?.startsWith('DPoP ')) {
+        token = authHeader.slice(5);
+        isDpop = true;
+      } else if (authHeader?.startsWith('Bearer ')) {
+        token = authHeader.slice(7);
+      } else {
         throw new UnauthorizedError('Missing or invalid Authorization header');
       }
-      const token = authHeader.slice(7);
       const jwks = await signingKeyService.getJwks();
       const localJwks = jose.createLocalJWKSet(jwks);
       const result = await verifyAccessToken(localJwks, token, env.JWT_ISSUER);
       if (!result) {
         throw new UnauthorizedError('Invalid access token');
+      }
+      if (isDpop) {
+        const dpopHdr = request.headers.dpop;
+        const dpopProof = typeof dpopHdr === 'string' ? dpopHdr : undefined;
+        if (dpopProof === undefined) {
+          throw new UnauthorizedError('DPoP proof required');
+        }
+        const issuerBase = env.JWT_ISSUER.replace(/\/$/, '');
+        const dpopResult = await validateDpopProof(dpopProof, {
+          htm: 'GET',
+          htu: `${issuerBase}/oauth/userinfo`,
+          accessToken: token,
+        });
+        const cnf = result.payload.cnf as { jkt?: string } | undefined;
+        if (!cnf?.jkt || cnf.jkt !== dpopResult.jkt) {
+          throw new UnauthorizedError('DPoP binding mismatch');
+        }
       }
       const sub = result.payload.sub;
       const scope = typeof result.payload.scope === 'string' ? result.payload.scope : '';

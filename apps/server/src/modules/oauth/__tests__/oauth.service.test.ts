@@ -723,6 +723,7 @@ describe('oauth.service', () => {
       expect(refreshTokenService.rotateRefreshToken).toHaveBeenCalledWith(
         plain,
         env.refreshGracePeriod,
+        undefined,
       );
     });
 

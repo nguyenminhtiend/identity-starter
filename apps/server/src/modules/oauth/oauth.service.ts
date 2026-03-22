@@ -497,6 +497,7 @@ async function issueTokenBundle(
     scope: string;
     nonce?: string;
     refreshPlaintext?: string;
+    dpopJkt?: string;
   },
 ): Promise<TokenResponse> {
   const signingKey = await deps.signingKeyService.getActiveSigningKey();
@@ -508,6 +509,7 @@ async function issueTokenBundle(
     scope: params.scope,
     clientId: params.client.clientId,
     expiresInSeconds: deps.env.accessTokenTtl,
+    ...(params.dpopJkt !== undefined ? { dpopJkt: params.dpopJkt } : {}),
   });
 
   let idToken: string | undefined;
@@ -532,13 +534,14 @@ async function issueTokenBundle(
       userId: params.userId,
       scope: params.scope,
       expiresInSeconds: deps.env.refreshTokenTtl,
+      ...(params.dpopJkt !== undefined ? { dpopJkt: params.dpopJkt } : {}),
     });
     refreshToken = created.plaintext;
   }
 
   return {
     access_token: accessToken,
-    token_type: 'Bearer',
+    token_type: params.dpopJkt !== undefined ? 'DPoP' : 'Bearer',
     expires_in: deps.env.accessTokenTtl,
     refresh_token: refreshToken,
     id_token: idToken,
@@ -550,6 +553,7 @@ async function exchangeAuthorizationCode(
   deps: OAuthServiceDeps,
   request: Extract<TokenRequestInput, { grant_type: 'authorization_code' }>,
   authenticatedClient: ClientResponse | null,
+  dpopJkt?: string,
 ): Promise<TokenResponse> {
   const codeHash = hashToken(request.code);
 
@@ -612,6 +616,7 @@ async function exchangeAuthorizationCode(
     client: result.client,
     scope: result.row.scope,
     nonce: result.row.nonce ?? undefined,
+    ...(dpopJkt !== undefined ? { dpopJkt } : {}),
   });
 
   await deps.eventBus.publish(
@@ -629,6 +634,7 @@ async function exchangeClientCredentials(
   deps: OAuthServiceDeps,
   request: Extract<TokenRequestInput, { grant_type: 'client_credentials' }>,
   authenticatedClient: ClientResponse | null,
+  dpopJkt?: string,
 ): Promise<TokenResponse> {
   if (!authenticatedClient) {
     throw new UnauthorizedError('Client authentication required');
@@ -667,6 +673,7 @@ async function exchangeClientCredentials(
     scope: effectiveScope,
     clientId: authenticatedClient.clientId,
     expiresInSeconds: deps.env.accessTokenTtl,
+    ...(dpopJkt !== undefined ? { dpopJkt } : {}),
   });
 
   await deps.eventBus.publish(
@@ -679,7 +686,7 @@ async function exchangeClientCredentials(
 
   return {
     access_token: accessToken,
-    token_type: 'Bearer',
+    token_type: dpopJkt !== undefined ? 'DPoP' : 'Bearer',
     expires_in: deps.env.accessTokenTtl,
     scope: effectiveScope,
   };
@@ -689,6 +696,7 @@ async function exchangeRefreshToken(
   deps: OAuthServiceDeps,
   request: Extract<TokenRequestInput, { grant_type: 'refresh_token' }>,
   authenticatedClient: ClientResponse | null,
+  dpopJkt?: string,
 ): Promise<TokenResponse> {
   const incomingHash = hashToken(request.refresh_token);
 
@@ -724,6 +732,7 @@ async function exchangeRefreshToken(
   const newRefreshPlain = await deps.refreshTokenService.rotateRefreshToken(
     request.refresh_token,
     deps.env.refreshGracePeriod,
+    dpopJkt,
   );
 
   const newHash = hashToken(newRefreshPlain);
@@ -742,6 +751,7 @@ async function exchangeRefreshToken(
     client,
     scope: effectiveScope,
     refreshPlaintext: newRefreshPlain,
+    ...(dpopJkt !== undefined ? { dpopJkt } : {}),
   });
 
   await deps.eventBus.publish(
@@ -759,14 +769,15 @@ async function exchangeToken(
   deps: OAuthServiceDeps,
   request: TokenRequestInput,
   authenticatedClient: ClientResponse | null,
+  dpopJkt?: string,
 ): Promise<TokenResponse> {
   if (request.grant_type === 'authorization_code') {
-    return exchangeAuthorizationCode(deps, request, authenticatedClient);
+    return exchangeAuthorizationCode(deps, request, authenticatedClient, dpopJkt);
   }
   if (request.grant_type === 'client_credentials') {
-    return exchangeClientCredentials(deps, request, authenticatedClient);
+    return exchangeClientCredentials(deps, request, authenticatedClient, dpopJkt);
   }
-  return exchangeRefreshToken(deps, request, authenticatedClient);
+  return exchangeRefreshToken(deps, request, authenticatedClient, dpopJkt);
 }
 
 async function revokeToken(deps: OAuthServiceDeps, input: RevokeInput): Promise<void> {
@@ -1020,8 +1031,11 @@ export function createOAuthService(deps: OAuthServiceDeps) {
     submitConsent: (userId: string, input: ConsentInput) => submitConsent(deps, userId, input),
     revokeConsent: (userId: string, oauthClientId: string) =>
       revokeConsent(deps, userId, oauthClientId),
-    exchangeToken: (request: TokenRequestInput, authenticatedClient: ClientResponse | null) =>
-      exchangeToken(deps, request, authenticatedClient),
+    exchangeToken: (
+      request: TokenRequestInput,
+      authenticatedClient: ClientResponse | null,
+      dpopJkt?: string,
+    ) => exchangeToken(deps, request, authenticatedClient, dpopJkt),
     revokeToken: (input: RevokeInput) => revokeToken(deps, input),
     getUserInfo: (userId: string, scope: string) => getUserInfo(deps, userId, scope),
     introspectToken: (token: string, tokenTypeHint?: string) =>
