@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import formbody from '@fastify/formbody';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
+import { sql } from 'drizzle-orm';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import {
   serializerCompiler,
@@ -55,7 +56,20 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(adminPlugin);
   await app.register(rbacPlugin);
 
-  app.get('/health', async () => ({ status: 'ok' }));
+  app.get('/health', async (request) => {
+    const checks: Record<string, string> = {};
+
+    try {
+      await request.server.container.db.execute(sql`SELECT 1`);
+      checks.database = 'ok';
+    } catch {
+      checks.database = 'error';
+    }
+
+    const status = Object.values(checks).every((v) => v === 'ok') ? 'ok' : 'degraded';
+
+    return { status, checks };
+  });
 
   await registerModules(app);
 
