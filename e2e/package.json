@@ -1,0 +1,14 @@
+{
+  "name": "@identity-starter/e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "jose": "^6.2.2",
+    "otpauth": "^9.5.0",
+    "vitest": "^4.1.0"
+  }
+}
