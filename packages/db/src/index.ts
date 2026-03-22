@@ -1,5 +1,6 @@
 export { createDb, type Database } from './client.js';
 export {
+  auditLogs,
   authorizationCodes,
   challengeTypeEnum,
   consentGrants,
@@ -13,8 +14,11 @@ export {
   passkeyColumns,
   passkeys,
   passwordResetTokens,
+  permissions,
   recoveryCodes,
   refreshTokens,
+  rolePermissions,
+  roles,
   sessionColumns,
   sessions,
   signingKeyColumns,
@@ -22,6 +26,7 @@ export {
   totpSecretColumns,
   totpSecrets,
   userColumns,
+  userRoles,
   users,
   webauthnChallenges,
 } from './schema/index.js';

@@ -13,6 +13,7 @@ const EnvSchema = z.object({
   SESSION_TTL_SECONDS: z.coerce.number().default(604800),
   JWT_ISSUER: z.url().default('http://localhost:3000'),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().default(3600),
+  AUDIT_RETENTION_DAYS: z.coerce.number().default(90),
   REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().default(2592000),
   AUTH_CODE_TTL_SECONDS: z.coerce.number().default(600),
   REFRESH_GRACE_PERIOD_SECONDS: z.coerce.number().default(10),
