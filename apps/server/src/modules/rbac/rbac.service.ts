@@ -48,7 +48,9 @@ export async function createRole(
 
     return row;
   } catch (error: unknown) {
-    if ((error as { code?: string }).code === '23505') {
+    const code =
+      (error as { code?: string }).code ?? (error as { cause?: { code?: string } }).cause?.code;
+    if (code === '23505') {
       throw new ConflictError('Role', 'name', input.name);
     }
     throw error;
@@ -117,7 +119,9 @@ export async function assignRole(
   try {
     await db.insert(userRoles).values({ userId, roleId, assignedBy });
   } catch (error: unknown) {
-    if ((error as { code?: string }).code === '23505') {
+    const code =
+      (error as { code?: string }).code ?? (error as { cause?: { code?: string } }).cause?.code;
+    if (code === '23505') {
       throw new ConflictError('UserRole', 'userId+roleId', `${userId}+${roleId}`);
     }
     throw error;
