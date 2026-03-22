@@ -14,6 +14,9 @@ import { registerModules } from './core/module-loader.js';
 import { adminPlugin } from './core/plugins/admin.js';
 import { authPlugin } from './core/plugins/auth.js';
 import { errorHandlerPlugin } from './core/plugins/error-handler.js';
+import { rbacPlugin } from './core/plugins/rbac.js';
+import { registerAuditListener } from './modules/audit/audit.listener.js';
+import { seedSystemRoles } from './modules/rbac/rbac.service.js';
 import { validateSession } from './modules/session/session.service.js';
 
 export interface AppOptions {
@@ -45,10 +48,14 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
 
   await app.register(authPlugin, { validateSession });
   await app.register(adminPlugin);
+  await app.register(rbacPlugin);
 
   app.get('/health', async () => ({ status: 'ok' }));
 
   await registerModules(app);
+
+  await seedSystemRoles(options.container.db);
+  registerAuditListener(options.container.db, options.container.eventBus);
 
   return app;
 }

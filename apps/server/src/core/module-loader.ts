@@ -1,5 +1,7 @@
 import type { FastifyInstance, FastifyPluginAsync } from 'fastify';
 import { accountRoutes } from '../modules/account/index.js';
+import { adminRoutes } from '../modules/admin/index.js';
+import { auditRoutes } from '../modules/audit/index.js';
 import { authRoutes } from '../modules/auth/index.js';
 import { clientRoutes } from '../modules/client/index.js';
 import { mfaAuthRoutes, mfaRoutes } from '../modules/mfa/index.js';
@@ -20,6 +22,8 @@ const modules: ModuleDefinition[] = [
   { plugin: mfaRoutes, prefix: '/api/account/mfa' },
   { plugin: mfaAuthRoutes, prefix: '/api/auth/mfa' },
   { plugin: clientRoutes, prefix: '/api/admin/clients' },
+  { plugin: adminRoutes, prefix: '/api/admin' },
+  { plugin: auditRoutes, prefix: '/api/admin/audit-logs' },
   { plugin: oauthRoutes, prefix: '/oauth' },
   { plugin: discoveryRoutes, prefix: '' },
 ];
