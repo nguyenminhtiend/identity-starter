@@ -94,3 +94,7 @@ export async function exportAuditLogs(db: Database, query: AuditExportQuery) {
 
   return db.select().from(auditLogs).where(where).orderBy(asc(auditLogs.createdAt));
 }
+
+export async function anonymizeActorInAuditLogs(db: Database, actorId: string): Promise<void> {
+  await db.update(auditLogs).set({ actorId: null }).where(eq(auditLogs.actorId, actorId));
+}

@@ -9,7 +9,8 @@ import { OAUTH_EVENTS } from '../oauth/oauth.events.js';
 import { PASSKEY_EVENTS } from '../passkey/passkey.events.js';
 import { RBAC_EVENTS } from '../rbac/rbac.events.js';
 import { SESSION_EVENTS } from '../session/session.events.js';
-import { createAuditLog } from './audit.service.js';
+import { USER_EVENTS } from '../user/user.events.js';
+import { anonymizeActorInAuditLogs, createAuditLog } from './audit.service.js';
 
 interface EventMapping {
   eventName: string;
@@ -262,4 +263,10 @@ export function registerAuditListener(db: Database, eventBus: EventBus): void {
       });
     });
   }
+
+  // GDPR: anonymize actor_id when a user is deleted (pre-wired for future user deletion feature)
+  eventBus.subscribe(USER_EVENTS.DELETED, async (event: DomainEvent) => {
+    const payload = event.payload as { userId: string };
+    await anonymizeActorInAuditLogs(db, payload.userId);
+  });
 }
