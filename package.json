@@ -10,7 +10,8 @@
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "db:generate": "pnpm --filter @identity-starter/db generate",
-    "db:migrate": "pnpm --filter @identity-starter/db migrate"
+    "db:migrate": "pnpm --filter @identity-starter/db migrate",
+    "test:e2e": "./scripts/e2e.sh"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",
