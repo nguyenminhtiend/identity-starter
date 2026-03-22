@@ -1,3 +1,4 @@
+import rateLimit from '@fastify/rate-limit';
 import { UnauthorizedError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
 import type { FastifyReply, FastifyRequest } from 'fastify';
@@ -43,6 +44,23 @@ function extractClientCredentials(
     }
   }
   return null;
+}
+
+function tokenEndpointRateLimitKey(request: FastifyRequest): string {
+  const creds = extractClientCredentials(request);
+  if (creds !== null) {
+    return `client:${creds.clientId}`;
+  }
+  const raw = request.body;
+  if (
+    raw !== null &&
+    typeof raw === 'object' &&
+    'client_id' in raw &&
+    typeof (raw as { client_id?: unknown }).client_id === 'string'
+  ) {
+    return `client:${(raw as { client_id: string }).client_id}`;
+  }
+  return `ip:${request.ip}`;
 }
 
 async function resolveAuthenticatedClient(
@@ -96,6 +114,8 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
     },
   });
 
+  await fastify.register(rateLimit, { global: false });
+
   fastify.get(
     '/authorize',
     {
@@ -145,6 +165,14 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.post(
     '/token',
     {
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: '1 minute',
+          hook: 'preHandler',
+          keyGenerator: tokenEndpointRateLimitKey,
+        },
+      },
       onRequest: [setOAuthTokenEndpointCors],
       schema: {
         body: tokenRequestSchema,

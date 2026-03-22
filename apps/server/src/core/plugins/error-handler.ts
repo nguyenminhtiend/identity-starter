@@ -38,6 +38,17 @@ export const errorHandlerPlugin = fp(async (fastify) => {
       });
     }
 
+    if (
+      err instanceof Error &&
+      'statusCode' in err &&
+      typeof (err as Error & { statusCode: unknown }).statusCode === 'number'
+    ) {
+      const statusCode = (err as Error & { statusCode: number }).statusCode;
+      if (statusCode >= 400 && statusCode < 600) {
+        return reply.code(statusCode).send({ error: err.message });
+      }
+    }
+
     request.log.error({ err }, 'Unhandled error');
     return reply.code(500).send({ error: 'Internal Server Error' });
   });

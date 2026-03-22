@@ -493,6 +493,74 @@ describe('oauth routes', () => {
     });
   });
 
+  describe('POST /oauth/token rate limiting', () => {
+    let rateLimitApp: FastifyInstance;
+
+    beforeAll(async () => {
+      rateLimitApp = Fastify({ logger: false });
+      rateLimitApp.setValidatorCompiler(validatorCompiler);
+      rateLimitApp.setSerializerCompiler(serializerCompiler);
+
+      rateLimitApp.decorate('container', {
+        db: {} as unknown as Container['db'],
+        eventBus: new InMemoryEventBus(),
+      });
+
+      rateLimitApp.decorate('requireSession', async (request: FastifyRequest) => {
+        const authHeader = request.headers.authorization;
+        if (!authHeader?.startsWith('Bearer ')) {
+          throw new UnauthorizedError('Missing or invalid Authorization header');
+        }
+        request.session = mockSession;
+        request.userId = mockSession.userId;
+      });
+      rateLimitApp.decorateRequest('session', null as unknown as typeof mockSession);
+      rateLimitApp.decorateRequest('userId', '');
+
+      await rateLimitApp.register(errorHandlerPlugin);
+      await rateLimitApp.register(oauthRoutes, { prefix: '/oauth' });
+      await rateLimitApp.ready();
+    });
+
+    afterAll(async () => {
+      await rateLimitApp.close();
+    });
+
+    it('returns 429 after exceeding per-client rate limit on token endpoint', async () => {
+      mocks.authenticateClient.mockResolvedValue(null);
+      mocks.exchangeToken.mockResolvedValue({
+        access_token: 'at',
+        token_type: 'Bearer',
+        expires_in: 3600,
+        scope: 'openid',
+      });
+
+      const body = {
+        ...buildTokenRequestAuthCode(),
+        client_id: 'rate-limit-test-client',
+      };
+
+      for (let i = 0; i < 60; i++) {
+        const res = await rateLimitApp.inject({
+          method: 'POST',
+          url: '/oauth/token',
+          headers: { 'content-type': 'application/json' },
+          payload: body,
+        });
+        expect(res.statusCode).toBe(200);
+      }
+
+      const response = await rateLimitApp.inject({
+        method: 'POST',
+        url: '/oauth/token',
+        headers: { 'content-type': 'application/json' },
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(429);
+    });
+  });
+
   describe('POST /oauth/consent', () => {
     it('returns redirect response', async () => {
       const payload = buildConsentApprove();
