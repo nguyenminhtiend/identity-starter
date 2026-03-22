@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+test.describe.configure({ mode: 'serial' });
+
 test.describe('Authentication', () => {
   const testEmail = `e2e-${Date.now()}@test.example`;
 

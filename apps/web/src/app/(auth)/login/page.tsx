@@ -1,7 +1,7 @@
-import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { Suspense } from 'react';
 import { LoginForm } from '@/components/auth/login-form';
+import { PasskeyAutofillLoader } from '@/components/auth/passkey-autofill-loader';
 import {
   Card,
   CardContent,
@@ -11,11 +11,6 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 
-const PasskeyAutofill = dynamic(
-  () => import('@/components/auth/passkey-autofill').then((m) => ({ default: m.PasskeyAutofill })),
-  { ssr: false },
-);
-
 export default function LoginPage() {
   return (
     <Card>
@@ -24,7 +19,7 @@ export default function LoginPage() {
         <CardDescription>Sign in to your account</CardDescription>
       </CardHeader>
       <CardContent>
-        <PasskeyAutofill callbackUrl="/account" />
+        <PasskeyAutofillLoader callbackUrl="/account" />
         <Suspense fallback={null}>
           <LoginForm />
         </Suspense>
