@@ -1,3 +1,7 @@
+# Local development:
+#   docker compose up postgres redis       # Infra only (run server with: pnpm --filter server dev)
+#   docker compose up                      # Full stack (Postgres + Redis + migrations + server)
+
 services:
   postgres:
     image: postgres:17-alpine
