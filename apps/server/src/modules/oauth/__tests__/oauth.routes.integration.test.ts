@@ -41,6 +41,7 @@ async function registerAdminAndCreateClient(
   app: FastifyInstance,
   testDb: TestDb,
   label: string,
+  grantTypes: string[] = ['authorization_code', 'refresh_token'],
 ): Promise<{
   sessionToken: string;
   user: { id: string; email: string; displayName: string };
@@ -76,7 +77,7 @@ async function registerAdminAndCreateClient(
     payload: {
       clientName: `Test App ${label}`,
       redirectUris: [redirectUri],
-      grantTypes: ['authorization_code', 'refresh_token'],
+      grantTypes,
       scope,
       tokenEndpointAuthMethod: 'client_secret_basic',
       isConfidential: true,
@@ -577,7 +578,407 @@ describe('OAuth2/OIDC routes integration', () => {
     expect(reuseNew.statusCode).toBe(401);
   });
 
+  it('client credentials flow: confidential client gets access token without refresh/id token', async () => {
+    const { clientId, clientSecret } = await registerAdminAndCreateClient(app, testDb, 'cc', [
+      'authorization_code',
+      'refresh_token',
+      'client_credentials',
+    ]);
+
+    const tokenRes = await app.inject({
+      method: 'POST',
+      url: '/oauth/token',
+      headers: {
+        'content-type': 'application/json',
+        authorization: basicAuthHeader(clientId, clientSecret),
+      },
+      payload: {
+        grant_type: 'client_credentials',
+      },
+    });
+    expect(tokenRes.statusCode).toBe(200);
+    const tokens = tokenRes.json() as {
+      access_token: string;
+      token_type: string;
+      expires_in: number;
+      scope: string;
+      refresh_token?: string;
+      id_token?: string;
+    };
+    expect(tokens.token_type).toBe('Bearer');
+    expect(tokens.refresh_token).toBeUndefined();
+    expect(tokens.id_token).toBeUndefined();
+    expect(tokens.scope).toBe(scope);
+    expect(tokens.expires_in).toBe(env.ACCESS_TOKEN_TTL_SECONDS);
+
+    const jwksRes = await app.inject({ method: 'GET', url: '/.well-known/jwks.json' });
+    expect(jwksRes.statusCode).toBe(200);
+    const jwks = jose.createLocalJWKSet(jwksRes.json() as jose.JSONWebKeySet);
+    const { payload } = await jose.jwtVerify(tokens.access_token, jwks, {
+      issuer: env.JWT_ISSUER,
+      audience: clientId,
+      algorithms: ['RS256'],
+    });
+    expect(payload.sub).toBe(clientId);
+    expect(payload.client_id).toBe(clientId);
+  });
+
+  it('token introspection: active tokens return claims, revoked refresh token returns inactive', async () => {
+    const { sessionToken, user, clientId, clientSecret } = await registerAdminAndCreateClient(
+      app,
+      testDb,
+      'intro',
+    );
+    const { codeVerifier, codeChallenge } = pkcePair();
+    const state = 'state-intro';
+
+    await app.inject({
+      method: 'GET',
+      url: '/oauth/authorize',
+      headers: { authorization: `Bearer ${sessionToken}` },
+      query: {
+        response_type: 'code',
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        scope,
+        state,
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+      },
+    });
+    const code = await approveConsentAndGetCode(app, sessionToken, clientId, state, codeChallenge);
+
+    const tokenRes = await app.inject({
+      method: 'POST',
+      url: '/oauth/token',
+      headers: {
+        'content-type': 'application/json',
+        authorization: basicAuthHeader(clientId, clientSecret),
+      },
+      payload: {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+      },
+    });
+    expect(tokenRes.statusCode).toBe(200);
+    const bundle = tokenRes.json() as {
+      access_token: string;
+      refresh_token: string;
+    };
+
+    const accessIntro = await app.inject({
+      method: 'POST',
+      url: '/oauth/introspect',
+      headers: {
+        'content-type': 'application/json',
+        authorization: basicAuthHeader(clientId, clientSecret),
+      },
+      payload: { token: bundle.access_token },
+    });
+    expect(accessIntro.statusCode).toBe(200);
+    const accessBody = accessIntro.json() as {
+      active: boolean;
+      sub?: string;
+      scope?: string;
+      client_id?: string;
+      token_type?: string;
+      iss?: string;
+    };
+    expect(accessBody.active).toBe(true);
+    expect(accessBody.sub).toBe(user.id);
+    expect(accessBody.scope).toBe(scope);
+    expect(accessBody.client_id).toBe(clientId);
+    expect(accessBody.token_type).toBe('access_token');
+    expect(accessBody.iss).toBe(env.JWT_ISSUER);
+
+    const refreshIntro = await app.inject({
+      method: 'POST',
+      url: '/oauth/introspect',
+      headers: {
+        'content-type': 'application/json',
+        authorization: basicAuthHeader(clientId, clientSecret),
+      },
+      payload: { token: bundle.refresh_token, token_type_hint: 'refresh_token' },
+    });
+    expect(refreshIntro.statusCode).toBe(200);
+    const refreshBody = refreshIntro.json() as {
+      active: boolean;
+      sub?: string;
+      token_type?: string;
+    };
+    expect(refreshBody.active).toBe(true);
+    expect(refreshBody.sub).toBe(user.id);
+    expect(refreshBody.token_type).toBe('refresh_token');
+
+    const revokeRes = await app.inject({
+      method: 'POST',
+      url: '/oauth/revoke',
+      headers: {
+        'content-type': 'application/json',
+        authorization: basicAuthHeader(clientId, clientSecret),
+      },
+      payload: { token: bundle.refresh_token, token_type_hint: 'refresh_token' },
+    });
+    expect(revokeRes.statusCode).toBe(200);
+
+    const afterRevoke = await app.inject({
+      method: 'POST',
+      url: '/oauth/introspect',
+      headers: {
+        'content-type': 'application/json',
+        authorization: basicAuthHeader(clientId, clientSecret),
+      },
+      payload: { token: bundle.refresh_token, token_type_hint: 'refresh_token' },
+    });
+    expect(afterRevoke.statusCode).toBe(200);
+    expect((afterRevoke.json() as { active: boolean }).active).toBe(false);
+  });
+
+  it('PAR flow: push auth request → authorize with request_uri → exchange code', async () => {
+    const { sessionToken, user, clientId, clientSecret } = await registerAdminAndCreateClient(
+      app,
+      testDb,
+      'par',
+    );
+    const { codeVerifier, codeChallenge } = pkcePair();
+    const state = 'state-par';
+
+    const parRes = await app.inject({
+      method: 'POST',
+      url: '/oauth/par',
+      headers: {
+        'content-type': 'application/json',
+        authorization: basicAuthHeader(clientId, clientSecret),
+      },
+      payload: {
+        response_type: 'code',
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        scope,
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+        state,
+      },
+    });
+    expect(parRes.statusCode).toBe(201);
+    const par = parRes.json() as { request_uri: string; expires_in: number };
+    expect(par.request_uri).toMatch(/^urn:ietf:params:oauth:request_uri:/);
+    expect(par.expires_in).toBeGreaterThan(0);
+
+    const authRes = await app.inject({
+      method: 'GET',
+      url: '/oauth/authorize',
+      headers: { authorization: `Bearer ${sessionToken}` },
+      query: {
+        request_uri: par.request_uri,
+        client_id: clientId,
+      },
+    });
+    expect(authRes.statusCode).toBe(200);
+    expect((authRes.json() as { type: string }).type).toBe('consent_required');
+
+    const authCode = await approveConsentAndGetCode(
+      app,
+      sessionToken,
+      clientId,
+      state,
+      codeChallenge,
+    );
+
+    const tokenRes = await app.inject({
+      method: 'POST',
+      url: '/oauth/token',
+      headers: {
+        'content-type': 'application/json',
+        authorization: basicAuthHeader(clientId, clientSecret),
+      },
+      payload: {
+        grant_type: 'authorization_code',
+        code: authCode,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+      },
+    });
+    expect(tokenRes.statusCode).toBe(200);
+    const tokens = tokenRes.json() as {
+      access_token: string;
+      refresh_token: string;
+      id_token: string;
+    };
+    expect(tokens.refresh_token).toBeDefined();
+    expect(tokens.id_token).toBeDefined();
+
+    const jwksRes = await app.inject({ method: 'GET', url: '/.well-known/jwks.json' });
+    const jwks = jose.createLocalJWKSet(jwksRes.json() as jose.JSONWebKeySet);
+    const { payload: accessPayload } = await jose.jwtVerify(tokens.access_token, jwks, {
+      issuer: env.JWT_ISSUER,
+      audience: clientId,
+      algorithms: ['RS256'],
+    });
+    expect(accessPayload.sub).toBe(user.id);
+  });
+
+  it('RP-Initiated Logout: end-session with id_token_hint redirects with state', async () => {
+    const { sessionToken, clientId, clientSecret } = await registerAdminAndCreateClient(
+      app,
+      testDb,
+      'logout',
+    );
+    const { codeVerifier, codeChallenge } = pkcePair();
+    const state = 'state-logout';
+    const nonce = 'nonce-logout';
+
+    await app.inject({
+      method: 'GET',
+      url: '/oauth/authorize',
+      headers: { authorization: `Bearer ${sessionToken}` },
+      query: {
+        response_type: 'code',
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        scope,
+        state,
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+        nonce,
+      },
+    });
+    const code = await approveConsentAndGetCode(
+      app,
+      sessionToken,
+      clientId,
+      state,
+      codeChallenge,
+      nonce,
+    );
+
+    const tokenRes = await app.inject({
+      method: 'POST',
+      url: '/oauth/token',
+      headers: {
+        'content-type': 'application/json',
+        authorization: basicAuthHeader(clientId, clientSecret),
+      },
+      payload: {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+      },
+    });
+    expect(tokenRes.statusCode).toBe(200);
+    const { id_token: idToken } = tokenRes.json() as { id_token: string };
+    expect(idToken).toBeDefined();
+
+    const logoutState = 'post-logout-state-xyz';
+    const endSessionRes = await app.inject({
+      method: 'GET',
+      url: '/oauth/end-session',
+      query: {
+        id_token_hint: idToken,
+        post_logout_redirect_uri: redirectUri,
+        state: logoutState,
+      },
+    });
+    expect(endSessionRes.statusCode).toBe(302);
+    const loc = endSessionRes.headers.location;
+    if (!loc) {
+      throw new Error('expected Location header');
+    }
+    const out = new URL(loc);
+    expect(out.origin + out.pathname).toBe(
+      new URL(redirectUri).origin + new URL(redirectUri).pathname,
+    );
+    expect(out.searchParams.get('state')).toBe(logoutState);
+  });
+
+  it('consent revocation: DELETE /consent/:clientId revokes consent and refresh tokens', async () => {
+    const { sessionToken, clientId, clientSecret } = await registerAdminAndCreateClient(
+      app,
+      testDb,
+      'consent-del',
+    );
+    const { codeVerifier, codeChallenge } = pkcePair();
+    const state = 'state-consent-del';
+
+    await app.inject({
+      method: 'GET',
+      url: '/oauth/authorize',
+      headers: { authorization: `Bearer ${sessionToken}` },
+      query: {
+        response_type: 'code',
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        scope,
+        state,
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+      },
+    });
+    const code = await approveConsentAndGetCode(app, sessionToken, clientId, state, codeChallenge);
+
+    const tokenRes = await app.inject({
+      method: 'POST',
+      url: '/oauth/token',
+      headers: {
+        'content-type': 'application/json',
+        authorization: basicAuthHeader(clientId, clientSecret),
+      },
+      payload: {
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: redirectUri,
+        code_verifier: codeVerifier,
+      },
+    });
+    expect(tokenRes.statusCode).toBe(200);
+    const { refresh_token: refreshToken } = tokenRes.json() as { refresh_token: string };
+
+    const delRes = await app.inject({
+      method: 'DELETE',
+      url: `/oauth/consent/${clientId}`,
+      headers: { authorization: `Bearer ${sessionToken}` },
+    });
+    expect(delRes.statusCode).toBe(204);
+
+    const refreshFail = await app.inject({
+      method: 'POST',
+      url: '/oauth/token',
+      headers: {
+        'content-type': 'application/json',
+        authorization: basicAuthHeader(clientId, clientSecret),
+      },
+      payload: {
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+      },
+    });
+    expect(refreshFail.statusCode).toBe(401);
+
+    const { codeChallenge: ch2 } = pkcePair();
+    const state2 = 'state-after-revoke';
+    const authAgain = await app.inject({
+      method: 'GET',
+      url: '/oauth/authorize',
+      headers: { authorization: `Bearer ${sessionToken}` },
+      query: {
+        response_type: 'code',
+        client_id: clientId,
+        redirect_uri: redirectUri,
+        scope,
+        state: state2,
+        code_challenge: ch2,
+        code_challenge_method: 'S256',
+      },
+    });
+    expect(authAgain.statusCode).toBe(200);
+    expect((authAgain.json() as { type: string }).type).toBe('consent_required');
+  });
+
   it('discovery: OpenID metadata and JWKS', async () => {
+    const issuerBase = env.JWT_ISSUER.replace(/\/$/, '');
     const configRes = await app.inject({
       method: 'GET',
       url: '/.well-known/openid-configuration',
@@ -585,13 +986,46 @@ describe('OAuth2/OIDC routes integration', () => {
     expect(configRes.statusCode).toBe(200);
     const config = configRes.json() as {
       issuer: string;
+      authorization_endpoint: string;
+      token_endpoint: string;
+      userinfo_endpoint: string;
+      revocation_endpoint: string;
+      introspection_endpoint: string;
+      end_session_endpoint: string;
+      pushed_authorization_request_endpoint: string;
+      require_pushed_authorization_requests: boolean;
       response_types_supported: string[];
       grant_types_supported: string[];
       jwks_uri: string;
+      introspection_endpoint_auth_methods_supported: string[];
+      revocation_endpoint_auth_methods_supported: string[];
+      dpop_signing_alg_values_supported: string[];
     };
     expect(config.issuer).toBe(env.JWT_ISSUER);
     expect(config.response_types_supported).toEqual(['code']);
-    expect(config.grant_types_supported).toEqual(['authorization_code', 'refresh_token']);
+    expect(config.grant_types_supported).toEqual([
+      'authorization_code',
+      'refresh_token',
+      'client_credentials',
+    ]);
+    expect(config.authorization_endpoint).toBe(`${issuerBase}/oauth/authorize`);
+    expect(config.token_endpoint).toBe(`${issuerBase}/oauth/token`);
+    expect(config.userinfo_endpoint).toBe(`${issuerBase}/oauth/userinfo`);
+    expect(config.revocation_endpoint).toBe(`${issuerBase}/oauth/revoke`);
+    expect(config.introspection_endpoint).toBe(`${issuerBase}/oauth/introspect`);
+    expect(config.end_session_endpoint).toBe(`${issuerBase}/oauth/end-session`);
+    expect(config.pushed_authorization_request_endpoint).toBe(`${issuerBase}/oauth/par`);
+    expect(config.require_pushed_authorization_requests).toBe(false);
+    expect(config.jwks_uri).toBe(`${issuerBase}/.well-known/jwks.json`);
+    expect(config.introspection_endpoint_auth_methods_supported).toEqual([
+      'client_secret_basic',
+      'client_secret_post',
+    ]);
+    expect(config.revocation_endpoint_auth_methods_supported).toEqual([
+      'client_secret_basic',
+      'client_secret_post',
+    ]);
+    expect(config.dpop_signing_alg_values_supported).toEqual(['ES256', 'RS256']);
 
     const jwksRes = await app.inject({ method: 'GET', url: '/.well-known/jwks.json' });
     expect(jwksRes.statusCode).toBe(200);
