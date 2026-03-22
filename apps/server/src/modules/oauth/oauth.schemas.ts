@@ -37,13 +37,29 @@ export const tokenRequestSchema = z.discriminatedUnion('grant_type', [
 
 export type TokenRequestInput = z.infer<typeof tokenRequestSchema>;
 
-export const consentSchema = z.object({
+const consentApproveSchema = z.object({
   client_id: z.string().min(1),
   scope: z.string().min(1),
-  decision: z.enum(['approve', 'deny']),
+  decision: z.literal('approve'),
+  state: z.string().min(1),
+  redirect_uri: z.string().min(1),
+  code_challenge: z.string().min(43).max(128),
+  code_challenge_method: z.literal('S256'),
+  nonce: z.string().optional(),
+});
+
+const consentDenySchema = z.object({
+  client_id: z.string().min(1),
+  scope: z.string().min(1),
+  decision: z.literal('deny'),
   state: z.string().min(1),
   redirect_uri: z.string().min(1),
 });
+
+export const consentSchema = z.discriminatedUnion('decision', [
+  consentApproveSchema,
+  consentDenySchema,
+]);
 
 export type ConsentInput = z.infer<typeof consentSchema>;
 

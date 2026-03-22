@@ -171,11 +171,27 @@ describe('consentSchema', () => {
     decision: 'approve' as const,
     state: 's',
     redirect_uri: 'myapp://cb',
+    code_challenge: codeChallenge,
+    code_challenge_method: 'S256' as const,
   };
 
-  it('accepts approve decision', () => {
+  it('accepts approve decision with PKCE fields', () => {
     const result = consentSchema.safeParse(valid);
     expect(result.success).toBe(true);
+  });
+
+  it('accepts approve with optional nonce', () => {
+    const result = consentSchema.safeParse({ ...valid, nonce: 'n1' });
+    expect(result.success).toBe(true);
+    if (result.success && result.data.decision === 'approve') {
+      expect(result.data.nonce).toBe('n1');
+    }
+  });
+
+  it('rejects approve without code_challenge', () => {
+    const { code_challenge: _c, ...rest } = valid;
+    const result = consentSchema.safeParse(rest);
+    expect(result.success).toBe(false);
   });
 
   it('accepts deny decision', () => {
