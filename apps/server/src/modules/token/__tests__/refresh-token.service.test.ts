@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 
+import { UnauthorizedError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js';
@@ -74,6 +75,25 @@ describe('refresh token service (unit)', () => {
     expect(events[0]?.eventName).toBe(TOKEN_EVENTS.REFRESH_ISSUED);
   });
 
+  it('createRefreshToken stores dpopJkt in the DB insert when provided', async () => {
+    const fixed = Buffer.alloc(32, 0xab);
+    vi.mocked(randomBytes).mockReturnValueOnce(fixed);
+
+    const values = vi.fn().mockResolvedValue(undefined);
+    const insert = vi.fn().mockReturnValue({ values });
+
+    const db = { insert } as unknown as Database;
+    const params = buildCreateRefreshTokenParams({ dpopJkt: 'bound-jkt-value' });
+
+    await createRefreshToken(db, eventBus, params);
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dpopJkt: 'bound-jkt-value',
+      }),
+    );
+  });
+
   it('rotateRefreshToken revokes old token, inserts successor, returns new plaintext', async () => {
     const oldPlain = 'client-presented-refresh';
     const oldHash = hashToken(oldPlain);
@@ -90,6 +110,7 @@ describe('refresh token service (unit)', () => {
       expiresAt: new Date(now + 86_400_000),
       revokedAt: null,
       rotationGracePlaintext: null,
+      dpopJkt: null,
       familyId: '0195b4a0-6c3b-7f00-8000-000000000002',
       createdAt: new Date(now - 60_000),
     };
@@ -149,6 +170,96 @@ describe('refresh token service (unit)', () => {
     expect(events).toEqual([TOKEN_EVENTS.REFRESH_REVOKED, TOKEN_EVENTS.REFRESH_ISSUED]);
   });
 
+  it('rotateRefreshToken for DPoP-bound token inserts successor with same dpopJkt', async () => {
+    const oldPlain = 'dpop-bound-refresh';
+    const oldHash = hashToken(oldPlain);
+    const boundJkt = 'expected-jkt-thumbprint';
+    const newBuf = Buffer.alloc(32, 0xde);
+    vi.mocked(randomBytes).mockReturnValueOnce(newBuf);
+
+    const now = Date.now();
+    const validRow = {
+      id: 'row-dpop',
+      token: oldHash,
+      clientId: 'c1',
+      userId: 'u1',
+      scope: 'openid profile',
+      expiresAt: new Date(now + 86_400_000),
+      revokedAt: null,
+      rotationGracePlaintext: null,
+      dpopJkt: boundJkt,
+      familyId: '0195b4a0-6c3b-7f00-8000-000000000099',
+      createdAt: new Date(now - 60_000),
+    };
+
+    const outerLimit = vi.fn().mockResolvedValue([validRow]);
+    const outerWhere = vi.fn().mockReturnValue({ limit: outerLimit });
+    const outerFrom = vi.fn().mockReturnValue({ where: outerWhere });
+    const outerSelect = vi.fn().mockReturnValue({ from: outerFrom });
+
+    const txLimit = vi.fn().mockResolvedValue([validRow]);
+    const txWhereSel = vi.fn().mockReturnValue({ limit: txLimit });
+    const txFrom = vi.fn().mockReturnValue({ where: txWhereSel });
+    const txSelect = vi.fn().mockReturnValue({ from: txFrom });
+
+    const txInsertValues = vi.fn().mockResolvedValue(undefined);
+    const txInsert = vi.fn().mockReturnValue({ values: txInsertValues });
+
+    const txWhereUp = vi.fn().mockResolvedValue(undefined);
+    const txSet = vi.fn().mockReturnValue({ where: txWhereUp });
+    const txUpdate = vi.fn().mockReturnValue({ set: txSet });
+
+    const transaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
+      await fn({
+        select: txSelect,
+        update: txUpdate,
+        insert: txInsert,
+      });
+    });
+
+    const db = { select: outerSelect, transaction } as unknown as Database;
+
+    const newPlain = await rotateRefreshToken(db, eventBus, oldPlain, 10, boundJkt);
+
+    expect(newPlain).toBe(newBuf.toString('base64url'));
+    expect(txInsertValues).toHaveBeenCalledWith(
+      expect.objectContaining({
+        dpopJkt: boundJkt,
+        familyId: validRow.familyId,
+      }),
+    );
+  });
+
+  it('rotateRefreshToken throws when dpopJkt does not match a bound token', async () => {
+    const oldPlain = 'mismatch-refresh';
+    const oldHash = hashToken(oldPlain);
+
+    const limit = vi.fn().mockResolvedValue([
+      {
+        id: 'row-m',
+        token: oldHash,
+        clientId: 'c1',
+        userId: 'u1',
+        scope: 'openid',
+        expiresAt: new Date(Date.now() + 86_400_000),
+        revokedAt: null,
+        rotationGracePlaintext: null,
+        dpopJkt: 'expected-jkt',
+        familyId: 'fam-m',
+        createdAt: new Date(Date.now() - 60_000),
+      },
+    ]);
+    const whereSel = vi.fn().mockReturnValue({ limit });
+    const fromSel = vi.fn().mockReturnValue({ where: whereSel });
+    const select = vi.fn().mockReturnValue({ from: fromSel });
+
+    const db = { select } as unknown as Database;
+
+    await expect(rotateRefreshToken(db, eventBus, oldPlain, 10, 'wrong-jkt')).rejects.toSatisfy(
+      (err: unknown) => err instanceof UnauthorizedError && err.message === 'DPoP binding mismatch',
+    );
+  });
+
   it('rotateRefreshToken with reused revoked token outside grace revokes family and throws', async () => {
     const oldPlain = 'reused-refresh';
     const oldHash = hashToken(oldPlain);
@@ -164,6 +275,7 @@ describe('refresh token service (unit)', () => {
         expiresAt: new Date(Date.now() + 86_400_000),
         revokedAt,
         rotationGracePlaintext: 'grace',
+        dpopJkt: null,
         familyId: 'fam-1',
         createdAt: new Date(Date.now() - 120_000),
       },
@@ -207,6 +319,7 @@ describe('refresh token service (unit)', () => {
         expiresAt: new Date(Date.now() + 86_400_000),
         revokedAt,
         rotationGracePlaintext: successor,
+        dpopJkt: null,
         familyId: 'fam-1',
         createdAt: new Date(Date.now() - 60_000),
       },

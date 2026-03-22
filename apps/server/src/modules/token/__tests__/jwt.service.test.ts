@@ -61,6 +61,46 @@ describe('jwt.service', () => {
       expect(payload.scope).toBe(scope);
       expect(payload.client_id).toBe(clientId);
     });
+
+    it('includes cnf.jkt when dpopJkt is provided', async () => {
+      const dpopJkt = 'dpop-thumbprint-example';
+      const token = await issueAccessToken(signingKey, {
+        issuer: 'https://id.example.com',
+        subject: 'user-dpop',
+        audience: 'api.example.com',
+        scope: 'openid',
+        clientId: 'client-dpop',
+        expiresInSeconds: 3600,
+        dpopJkt,
+      });
+
+      const jwks = jose.createLocalJWKSet({ keys: [signingKey.publicKeyJwk] });
+      const { payload } = await jose.jwtVerify(token, jwks, {
+        issuer: 'https://id.example.com',
+        algorithms: ['RS256'],
+      });
+
+      expect(payload.cnf).toEqual({ jkt: dpopJkt });
+    });
+
+    it('omits cnf when dpopJkt is not provided', async () => {
+      const token = await issueAccessToken(signingKey, {
+        issuer: 'https://id.example.com',
+        subject: 'user-bearer',
+        audience: 'api.example.com',
+        scope: 'openid',
+        clientId: 'client-bearer',
+        expiresInSeconds: 3600,
+      });
+
+      const jwks = jose.createLocalJWKSet({ keys: [signingKey.publicKeyJwk] });
+      const { payload } = await jose.jwtVerify(token, jwks, {
+        issuer: 'https://id.example.com',
+        algorithms: ['RS256'],
+      });
+
+      expect(payload).not.toHaveProperty('cnf');
+    });
   });
 
   describe('issueIdToken', () => {

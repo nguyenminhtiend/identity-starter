@@ -92,7 +92,7 @@ export const revokeBodySchema = revokeSchema.extend({
 
 export const tokenResponseSchema = z.object({
   access_token: z.string(),
-  token_type: z.literal('Bearer'),
+  token_type: z.enum(['Bearer', 'DPoP']),
   expires_in: z.number(),
   refresh_token: z.string().optional(),
   id_token: z.string().optional(),

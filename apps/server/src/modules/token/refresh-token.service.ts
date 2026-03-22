@@ -23,6 +23,7 @@ export interface CreateRefreshTokenParams {
   scope: string;
   expiresInSeconds: number;
   familyId?: string;
+  dpopJkt?: string;
 }
 
 export interface RefreshTokenServiceDeps {
@@ -61,6 +62,7 @@ export async function createRefreshToken(
     scope: params.scope,
     expiresAt,
     familyId,
+    dpopJkt: params.dpopJkt ?? null,
   });
 
   await eventBus.publish(
@@ -79,6 +81,7 @@ export async function rotateRefreshToken(
   eventBus: EventBus,
   token: string,
   gracePeriodSeconds: number,
+  dpopJkt?: string,
 ): Promise<string> {
   const incomingHash = hashToken(token);
   const now = new Date();
@@ -91,6 +94,12 @@ export async function rotateRefreshToken(
 
   if (!row) {
     throw new UnauthorizedError('Invalid refresh token');
+  }
+
+  if (row.dpopJkt != null) {
+    if (dpopJkt !== row.dpopJkt) {
+      throw new UnauthorizedError('DPoP binding mismatch');
+    }
   }
 
   if (row.revokedAt) {
@@ -148,6 +157,7 @@ export async function rotateRefreshToken(
       scope: current.scope,
       expiresAt: newExpiresAt,
       familyId: current.familyId,
+      dpopJkt: current.dpopJkt ?? null,
     });
   });
 
@@ -228,8 +238,8 @@ export function createRefreshTokenService(deps: RefreshTokenServiceDeps) {
   return {
     createRefreshToken: (params: CreateRefreshTokenParams) =>
       createRefreshToken(db, eventBus, params),
-    rotateRefreshToken: (token: string, gracePeriodSeconds: number) =>
-      rotateRefreshToken(db, eventBus, token, gracePeriodSeconds),
+    rotateRefreshToken: (token: string, gracePeriodSeconds: number, dpopJkt?: string) =>
+      rotateRefreshToken(db, eventBus, token, gracePeriodSeconds, dpopJkt),
     revokeRefreshToken: (token: string) => revokeRefreshToken(db, eventBus, token),
     revokeAllForClient: (clientId: string, userId: string) =>
       revokeAllForClient(db, eventBus, clientId, userId),

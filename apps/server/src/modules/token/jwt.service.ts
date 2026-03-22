@@ -10,6 +10,7 @@ export interface AccessTokenParams {
   scope: string;
   clientId: string;
   expiresInSeconds: number;
+  dpopJkt?: string;
 }
 
 export interface IdTokenParams {
@@ -43,11 +44,17 @@ export async function issueAccessToken(
   const now = Math.floor(Date.now() / 1000);
   const jti = uuidv7();
 
-  return new jose.SignJWT({
+  const claims: Record<string, unknown> = {
     scope: params.scope,
     client_id: params.clientId,
     jti,
-  })
+  };
+
+  if (params.dpopJkt !== undefined) {
+    claims.cnf = { jkt: params.dpopJkt };
+  }
+
+  return new jose.SignJWT(claims)
     .setProtectedHeader({ alg: 'RS256', kid: signingKey.kid })
     .setIssuer(params.issuer)
     .setSubject(params.subject)
