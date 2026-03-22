@@ -24,6 +24,10 @@ vi.mock('../passkey.service.js', () => ({
   })),
 }));
 
+vi.mock('../../../core/env.js', () => ({
+  env: { SESSION_TTL_SECONDS: 604800 },
+}));
+
 import { passkeyRoutes } from '../passkey.routes.js';
 
 describe('passkey routes', () => {

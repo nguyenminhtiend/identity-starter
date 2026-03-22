@@ -16,6 +16,10 @@ vi.mock('../mfa.service.js', () => ({
   })),
 }));
 
+vi.mock('../../../core/env.js', () => ({
+  env: { SESSION_TTL_SECONDS: 604800 },
+}));
+
 import { mfaAuthRoutes } from '../mfa.auth-routes.js';
 
 describe('mfa auth routes', () => {

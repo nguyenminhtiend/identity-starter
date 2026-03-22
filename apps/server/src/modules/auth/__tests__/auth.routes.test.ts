@@ -42,6 +42,10 @@ vi.mock('../password-reset.service.js', () => ({
   resetPassword: mockResetPassword,
 }));
 
+vi.mock('../../../core/env.js', () => ({
+  env: { SESSION_TTL_SECONDS: 604800 },
+}));
+
 import { authRoutes } from '../auth.routes.js';
 
 describe('auth routes', () => {

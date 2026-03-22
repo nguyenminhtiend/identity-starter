@@ -1,4 +1,5 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
+import { registerAuditListener } from './audit.listener.js';
 import {
   auditChainVerificationResponseSchema,
   auditExportQuerySchema,
@@ -8,7 +9,9 @@ import {
 import { exportAuditLogs, queryAuditLogs, verifyAuditChain } from './audit.service.js';
 
 export const auditRoutes: FastifyPluginAsyncZod = async (fastify) => {
-  const { db } = fastify.container;
+  const { db, eventBus } = fastify.container;
+
+  registerAuditListener(db, eventBus);
 
   fastify.get(
     '/',

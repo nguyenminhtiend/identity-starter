@@ -49,6 +49,10 @@ run = "pnpm --filter @identity-starter/server test:integration"
 description = "Run unit tests in watch mode (server)"
 run = "pnpm --filter @identity-starter/server test:watch"
 
+[tasks."test:server"]
+description = "Run unit + integration tests (no e2e)"
+run = "pnpm --filter @identity-starter/server test"
+
 [tasks."test:e2e"]
 description = "Run Playwright e2e tests (web)"
 run = "pnpm --filter @identity-starter/web e2e"

@@ -19,6 +19,10 @@ vi.mock('../audit.service.js', () => ({
   verifyAuditChain: mocks.verifyAuditChain,
 }));
 
+vi.mock('../audit.listener.js', () => ({
+  registerAuditListener: vi.fn(),
+}));
+
 import { auditRoutes } from '../audit.routes.js';
 
 describe('audit routes', () => {

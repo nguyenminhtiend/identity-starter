@@ -20,6 +20,7 @@
     "db:studio": "pnpm --filter @identity-starter/db studio",
     "db:check": "pnpm --filter @identity-starter/db check",
     "db:seed": "pnpm --filter @identity-starter/db seed",
+    "test:server": "pnpm --filter @identity-starter/server test",
     "test:e2e": "./scripts/e2e.sh"
   },
   "devDependencies": {

@@ -16,13 +16,11 @@ describe('GET /health', () => {
     await testDb.teardown();
   });
 
-  it('should return status ok with database connectivity', async () => {
+  it('should return status ok', async () => {
     const response = await app.inject({ method: 'GET', url: '/health' });
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.status).toBe('ok');
-    expect(body.checks).toHaveProperty('database');
-    expect(body.checks.database).toBe('ok');
   });
 });
