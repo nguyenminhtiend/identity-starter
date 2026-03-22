@@ -16,6 +16,7 @@ import {
   buildConsentApprove,
   buildConsentDeny,
   buildTokenRequestAuthCode,
+  buildTokenRequestClientCredentials,
   buildTokenRequestRefresh,
 } from './oauth.factory.js';
 
@@ -120,10 +121,12 @@ describe('oauth.service', () => {
 
   beforeEach(() => {
     signingKeyService.getActiveSigningKey.mockResolvedValue(testSigningKey);
+    refreshTokenService.createRefreshToken.mockReset();
     refreshTokenService.createRefreshToken.mockResolvedValue({
       plaintext: 'new-refresh-plain',
       familyId: '30000000-0000-7000-8000-000000000003',
     });
+    refreshTokenService.rotateRefreshToken.mockReset();
     refreshTokenService.rotateRefreshToken.mockResolvedValue('rotated-refresh-plain');
     mocks.getClientByClientId.mockReset();
     mocks.getClient.mockReset();
@@ -724,6 +727,167 @@ describe('oauth.service', () => {
       );
 
       expect(tokens.refresh_token).toBe('grace-successor');
+    });
+  });
+
+  describe('exchangeToken client_credentials', () => {
+    function m2mClient(overrides: Partial<ClientResponse> = {}): ClientResponse {
+      return baseClient({
+        grantTypes: ['client_credentials'],
+        isConfidential: true,
+        ...overrides,
+      });
+    }
+
+    it('issues access token only (no id_token, no refresh_token) for valid confidential client', async () => {
+      const db = {} as never;
+      const publishSpy = vi.spyOn(eventBus, 'publish');
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const client = m2mClient();
+      const tokens = await service.exchangeToken(buildTokenRequestClientCredentials(), client);
+
+      expect(tokens.access_token).toBeTruthy();
+      expect(tokens.token_type).toBe('Bearer');
+      expect(tokens.expires_in).toBe(env.accessTokenTtl);
+      expect(tokens.scope).toBe(client.scope);
+      expect(tokens.refresh_token).toBeUndefined();
+      expect(tokens.id_token).toBeUndefined();
+      expect(refreshTokenService.createRefreshToken).not.toHaveBeenCalled();
+      expect(publishSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventName: OAUTH_EVENTS.TOKEN_EXCHANGED,
+          payload: expect.objectContaining({ grantType: 'client_credentials' }),
+        }),
+      );
+    });
+
+    it('uses requested scope when it is a subset of client allowed scopes', async () => {
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const client = m2mClient({ scope: 'openid profile email' });
+      const tokens = await service.exchangeToken(
+        buildTokenRequestClientCredentials({ scope: 'profile email' }),
+        client,
+      );
+
+      expect(tokens.scope).toBe('profile email');
+    });
+
+    it('uses full client scope when no scope is requested', async () => {
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const client = m2mClient({ scope: 'api.read api.write' });
+      const tokens = await service.exchangeToken(buildTokenRequestClientCredentials(), client);
+
+      expect(tokens.scope).toBe('api.read api.write');
+    });
+
+    it('throws ValidationError when client lacks client_credentials grant type', async () => {
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const client = m2mClient({ grantTypes: ['authorization_code'] });
+
+      await expect(
+        service.exchangeToken(buildTokenRequestClientCredentials(), client),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('throws ValidationError for public (non-confidential) client', async () => {
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const client = m2mClient({ isConfidential: false });
+
+      await expect(
+        service.exchangeToken(buildTokenRequestClientCredentials(), client),
+      ).rejects.toThrow(ValidationError);
+    });
+
+    it('throws ForbiddenError when client is suspended', async () => {
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const client = m2mClient({ status: 'suspended' });
+
+      await expect(
+        service.exchangeToken(buildTokenRequestClientCredentials(), client),
+      ).rejects.toThrow(ForbiddenError);
+    });
+
+    it('throws UnauthorizedError when client is not authenticated', async () => {
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      await expect(
+        service.exchangeToken(buildTokenRequestClientCredentials(), null),
+      ).rejects.toThrow(UnauthorizedError);
+    });
+
+    it('access token sub is the OAuth client_id (M2M)', async () => {
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const client = m2mClient({ clientId: 'm2m-service-client' });
+      const tokens = await service.exchangeToken(buildTokenRequestClientCredentials(), client);
+
+      const { payload } = await jose.jwtVerify(tokens.access_token, testSigningKey.publicKeyJwk, {
+        issuer: env.jwtIssuer,
+        audience: 'm2m-service-client',
+      });
+
+      expect(payload.sub).toBe('m2m-service-client');
     });
   });
 

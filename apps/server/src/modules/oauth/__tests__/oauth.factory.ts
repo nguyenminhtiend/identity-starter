@@ -64,3 +64,12 @@ export function buildTokenRequestRefresh(
     ...overrides,
   };
 }
+
+export function buildTokenRequestClientCredentials(
+  overrides?: Partial<Extract<TokenRequestInput, { grant_type: 'client_credentials' }>>,
+): Extract<TokenRequestInput, { grant_type: 'client_credentials' }> {
+  return {
+    grant_type: 'client_credentials',
+    ...overrides,
+  };
+}

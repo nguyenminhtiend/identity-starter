@@ -150,9 +150,31 @@ describe('tokenRequestSchema', () => {
 
   it('rejects unknown grant_type', () => {
     const result = tokenRequestSchema.safeParse({
-      grant_type: 'client_credentials',
+      grant_type: 'password',
+      username: 'u',
+      password: 'p',
     });
     expect(result.success).toBe(false);
+  });
+
+  it('accepts client_credentials grant with optional scope and client fields', () => {
+    const result = tokenRequestSchema.safeParse({
+      grant_type: 'client_credentials',
+      scope: 'api.read',
+      client_id: 'cid',
+      client_secret: 'secret',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.grant_type).toBe('client_credentials');
+    }
+  });
+
+  it('accepts client_credentials grant with only grant_type', () => {
+    const result = tokenRequestSchema.safeParse({
+      grant_type: 'client_credentials',
+    });
+    expect(result.success).toBe(true);
   });
 
   it('strips unknown fields on authorization_code branch', () => {

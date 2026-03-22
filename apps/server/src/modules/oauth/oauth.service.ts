@@ -522,6 +522,66 @@ async function exchangeAuthorizationCode(
   return tokenResponse;
 }
 
+async function exchangeClientCredentials(
+  deps: OAuthServiceDeps,
+  request: Extract<TokenRequestInput, { grant_type: 'client_credentials' }>,
+  authenticatedClient: ClientResponse | null,
+): Promise<TokenResponse> {
+  if (!authenticatedClient) {
+    throw new UnauthorizedError('Client authentication required');
+  }
+
+  if (!authenticatedClient.isConfidential) {
+    throw new ValidationError('Client credentials grant requires a confidential client', {});
+  }
+
+  if (authenticatedClient.status === 'suspended') {
+    throw new ForbiddenError('Client is suspended');
+  }
+
+  if (!authenticatedClient.grantTypes.includes('client_credentials')) {
+    throw new ValidationError('Client is not allowed to use the client_credentials grant', {});
+  }
+
+  let effectiveScope: string;
+  const requested = request.scope?.trim();
+  if (requested === undefined || requested === '') {
+    effectiveScope = authenticatedClient.scope;
+  } else {
+    if (!scopeSubset(requested, authenticatedClient.scope)) {
+      throw new ValidationError('Requested scope exceeds client registration', {
+        scope: 'Invalid',
+      });
+    }
+    effectiveScope = requested;
+  }
+
+  const signingKey = await deps.signingKeyService.getActiveSigningKey();
+  const accessToken = await issueAccessToken(signingKey, {
+    issuer: deps.env.jwtIssuer,
+    subject: authenticatedClient.clientId,
+    audience: authenticatedClient.clientId,
+    scope: effectiveScope,
+    clientId: authenticatedClient.clientId,
+    expiresInSeconds: deps.env.accessTokenTtl,
+  });
+
+  await deps.eventBus.publish(
+    createDomainEvent(OAUTH_EVENTS.TOKEN_EXCHANGED, {
+      userId: authenticatedClient.clientId,
+      clientId: authenticatedClient.clientId,
+      grantType: 'client_credentials',
+    }),
+  );
+
+  return {
+    access_token: accessToken,
+    token_type: 'Bearer',
+    expires_in: deps.env.accessTokenTtl,
+    scope: effectiveScope,
+  };
+}
+
 async function exchangeRefreshToken(
   deps: OAuthServiceDeps,
   request: Extract<TokenRequestInput, { grant_type: 'refresh_token' }>,
@@ -599,6 +659,9 @@ async function exchangeToken(
 ): Promise<TokenResponse> {
   if (request.grant_type === 'authorization_code') {
     return exchangeAuthorizationCode(deps, request, authenticatedClient);
+  }
+  if (request.grant_type === 'client_credentials') {
+    return exchangeClientCredentials(deps, request, authenticatedClient);
   }
   return exchangeRefreshToken(deps, request, authenticatedClient);
 }

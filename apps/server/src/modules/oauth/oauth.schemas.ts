@@ -45,9 +45,17 @@ const refreshTokenGrantSchema = z.object({
   client_secret: z.string().optional(),
 });
 
+const clientCredentialsTokenSchema = z.object({
+  grant_type: z.literal('client_credentials'),
+  scope: z.string().optional(),
+  client_id: z.string().optional(),
+  client_secret: z.string().optional(),
+});
+
 export const tokenRequestSchema = z.discriminatedUnion('grant_type', [
   authCodeTokenSchema,
   refreshTokenGrantSchema,
+  clientCredentialsTokenSchema,
 ]);
 
 export type TokenRequestInput = z.infer<typeof tokenRequestSchema>;
