@@ -1,5 +1,7 @@
 import type { ApiErrorBody } from '../types/api.js';
 
+export type { PaginatedResponse } from '../types/api.js';
+
 export class ApiRequestError extends Error {
   constructor(
     public statusCode: number,

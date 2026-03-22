@@ -9,6 +9,9 @@
     "test": "turbo run test",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
+    "dev:web": "pnpm --filter @identity-starter/web dev",
+    "dev:admin": "pnpm --filter @identity-starter/admin dev",
+    "dev:all": "turbo run dev",
     "db:generate": "pnpm --filter @identity-starter/db generate",
     "db:migrate": "pnpm --filter @identity-starter/db migrate",
     "test:e2e": "./scripts/e2e.sh"
