@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
   exchangeToken: vi.fn(),
   revokeToken: vi.fn(),
   getUserInfo: vi.fn(),
+  introspectToken: vi.fn(),
   getJwks: vi.fn(),
   verifyAccessToken: vi.fn(),
   authenticateClient: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock('../oauth.service.js', () => ({
     exchangeToken: mocks.exchangeToken,
     revokeToken: mocks.revokeToken,
     getUserInfo: mocks.getUserInfo,
+    introspectToken: mocks.introspectToken,
   })),
 }));
 
@@ -102,6 +104,7 @@ describe('oauth routes', () => {
     mocks.exchangeToken.mockReset();
     mocks.revokeToken.mockReset();
     mocks.getUserInfo.mockReset();
+    mocks.introspectToken.mockReset();
     mocks.getJwks.mockReset();
     mocks.verifyAccessToken.mockReset();
     mocks.authenticateClient.mockReset();
@@ -310,6 +313,90 @@ describe('oauth routes', () => {
 
       expect(response.statusCode).toBe(302);
       expect(response.headers.location).toBe('https://example.com/callback?code=x&state=y');
+    });
+  });
+
+  describe('POST /oauth/introspect', () => {
+    const authed = {
+      id: 'internal',
+      clientId: 'cid',
+      clientName: 'C',
+      description: null,
+      redirectUris: ['https://example.com/callback'],
+      grantTypes: ['authorization_code'] as const,
+      responseTypes: ['code'] as const,
+      scope: 'openid',
+      tokenEndpointAuthMethod: 'client_secret_basic' as const,
+      isConfidential: true,
+      logoUri: null,
+      tosUri: null,
+      policyUri: null,
+      applicationType: 'web' as const,
+      status: 'active' as const,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    it('returns 200 with introspection response when client auth is valid', async () => {
+      mocks.authenticateClient.mockResolvedValue(authed);
+      const introspection = {
+        active: true,
+        sub: mockSession.userId,
+        client_id: 'cid',
+        scope: 'openid profile',
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        iat: Math.floor(Date.now() / 1000),
+        iss: 'http://localhost:3000',
+        token_type: 'access_token',
+      };
+      mocks.introspectToken.mockResolvedValue(introspection);
+
+      const basic = Buffer.from('cid:secret').toString('base64');
+      const origin = 'https://introspect-client.example';
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/introspect',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Basic ${basic}`,
+          origin,
+        },
+        payload: { token: 'opaque-at' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(response.body)).toEqual(introspection);
+      expect(mocks.authenticateClient).toHaveBeenCalledWith(expect.anything(), 'cid', 'secret');
+      expect(mocks.introspectToken).toHaveBeenCalledWith('opaque-at', undefined);
+      expect(response.headers['access-control-allow-origin']).toBe(origin);
+    });
+
+    it('returns 401 when client authentication is missing', async () => {
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/introspect',
+        headers: { 'content-type': 'application/json' },
+        payload: { token: 'opaque-at' },
+      });
+
+      expect(response.statusCode).toBe(401);
+      expect(mocks.introspectToken).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 when token is missing', async () => {
+      const basic = Buffer.from('cid:secret').toString('base64');
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/introspect',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Basic ${basic}`,
+        },
+        payload: { client_id: 'cid', client_secret: 'secret' },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(mocks.introspectToken).not.toHaveBeenCalled();
     });
   });
 

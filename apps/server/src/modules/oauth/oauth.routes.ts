@@ -13,6 +13,8 @@ import { createSigningKeyService } from '../token/signing-key.service.js';
 import {
   authorizeQuerySchema,
   consentSchema,
+  introspectRequestSchema,
+  introspectResponseSchema,
   revokeBodySchema,
   tokenRequestSchema,
   tokenResponseSchema,
@@ -137,6 +139,28 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const result = await oauthService.submitConsent(request.userId, request.body);
       return reply.redirect(result.redirectUri, 302);
+    },
+  );
+
+  fastify.post(
+    '/introspect',
+    {
+      onRequest: [setOAuthTokenEndpointCors],
+      schema: {
+        body: introspectRequestSchema,
+        response: { 200: introspectResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const authenticatedClient = await resolveAuthenticatedClient(db, request, request.body);
+      if (!authenticatedClient) {
+        throw new UnauthorizedError('Client authentication required');
+      }
+      const result = await oauthService.introspectToken(
+        request.body.token,
+        request.body.token_type_hint,
+      );
+      return reply.status(200).send(result);
     },
   );
 

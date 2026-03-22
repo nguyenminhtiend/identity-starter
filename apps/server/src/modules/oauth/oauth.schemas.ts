@@ -117,3 +117,25 @@ export const userinfoResponseSchema = z.object({
 });
 
 export type UserinfoResponse = z.infer<typeof userinfoResponseSchema>;
+
+export const introspectRequestSchema = z.object({
+  token: z.string().min(1),
+  token_type_hint: z.enum(['access_token', 'refresh_token']).optional(),
+  client_id: z.string().optional(),
+  client_secret: z.string().optional(),
+});
+
+export const introspectResponseSchema = z.object({
+  active: z.boolean(),
+  scope: z.string().optional(),
+  client_id: z.string().optional(),
+  sub: z.string().optional(),
+  exp: z.number().optional(),
+  iat: z.number().optional(),
+  iss: z.string().optional(),
+  token_type: z.string().optional(),
+  cnf: z.object({ jkt: z.string() }).optional(),
+});
+
+export type IntrospectRequest = z.infer<typeof introspectRequestSchema>;
+export type IntrospectResponse = z.infer<typeof introspectResponseSchema>;

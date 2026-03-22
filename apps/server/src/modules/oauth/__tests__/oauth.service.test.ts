@@ -8,7 +8,9 @@ import * as jose from 'jose';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
 import type { ClientResponse } from '../../client/client.schemas.js';
+import { issueAccessToken } from '../../token/jwt.service.js';
 import type { ActiveSigningKeyResult } from '../../token/signing-key.service.js';
+import { TOKEN_EVENTS } from '../../token/token.events.js';
 import { OAUTH_EVENTS } from '../oauth.events.js';
 import { createOAuthService } from '../oauth.service.js';
 import {
@@ -88,6 +90,16 @@ function createSelectWithLimit(rows: unknown[]) {
   return chain;
 }
 
+function createRefreshIntrospectDb(rows: unknown[]) {
+  const limit = vi.fn().mockResolvedValue(rows);
+  const where = vi.fn().mockReturnValue({ limit });
+  const innerJoin = vi.fn().mockReturnValue({ where });
+  const from = vi.fn().mockReturnValue({ innerJoin });
+  return {
+    select: vi.fn().mockReturnValue({ from }),
+  } as never;
+}
+
 describe('oauth.service', () => {
   beforeAll(async () => {
     const { publicKey, privateKey } = await jose.generateKeyPair('RS256', { extractable: true });
@@ -121,6 +133,7 @@ describe('oauth.service', () => {
 
   beforeEach(() => {
     signingKeyService.getActiveSigningKey.mockResolvedValue(testSigningKey);
+    signingKeyService.getJwks.mockResolvedValue({ keys: [testSigningKey.publicKeyJwk] });
     refreshTokenService.createRefreshToken.mockReset();
     refreshTokenService.createRefreshToken.mockResolvedValue({
       plaintext: 'new-refresh-plain',
@@ -970,6 +983,256 @@ describe('oauth.service', () => {
         sub: USER_ID,
         email: 'u@example.com',
         email_verified: true,
+      });
+    });
+  });
+
+  describe('introspectToken', () => {
+    it('returns active access_token claims for valid JWT', async () => {
+      const db = {} as never;
+      const publishSpy = vi.spyOn(eventBus, 'publish');
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const accessToken = await issueAccessToken(testSigningKey, {
+        issuer: env.jwtIssuer,
+        subject: USER_ID,
+        audience: PUBLIC_CLIENT_ID,
+        scope: 'openid profile',
+        clientId: PUBLIC_CLIENT_ID,
+        expiresInSeconds: 3600,
+      });
+
+      const result = await service.introspectToken(accessToken);
+
+      expect(result).toMatchObject({
+        active: true,
+        sub: USER_ID,
+        client_id: PUBLIC_CLIENT_ID,
+        scope: 'openid profile',
+        token_type: 'access_token',
+        iss: env.jwtIssuer,
+      });
+      expect(result.exp).toBeTypeOf('number');
+      expect(result.iat).toBeTypeOf('number');
+      expect(publishSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventName: TOKEN_EVENTS.TOKEN_INTROSPECTED }),
+      );
+    });
+
+    it('returns active: false for expired access token', async () => {
+      const db = createRefreshIntrospectDb([]);
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const now = Math.floor(Date.now() / 1000);
+      const expiredJwt = await new jose.SignJWT({
+        scope: 'openid',
+        client_id: PUBLIC_CLIENT_ID,
+      })
+        .setProtectedHeader({ alg: 'RS256', kid: testSigningKey.kid })
+        .setIssuer(env.jwtIssuer)
+        .setSubject(USER_ID)
+        .setAudience(PUBLIC_CLIENT_ID)
+        .setIssuedAt(now - 7200)
+        .setExpirationTime(now - 3600)
+        .sign(testSigningKey.privateKey);
+
+      await expect(service.introspectToken(expiredJwt)).resolves.toEqual({ active: false });
+    });
+
+    it('returns active: false for invalid access token (bad signature)', async () => {
+      const db = createRefreshIntrospectDb([]);
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      await expect(service.introspectToken('not.a.valid.jwt')).resolves.toEqual({ active: false });
+    });
+
+    it('returns active refresh_token metadata from DB', async () => {
+      const plain = 'opaque-refresh-1';
+      const createdAt = new Date('2024-06-01T12:00:00.000Z');
+      const expiresAt = new Date(Date.now() + 3600_000);
+
+      const row = {
+        scope: 'openid email',
+        userId: USER_ID,
+        expiresAt,
+        revokedAt: null,
+        createdAt,
+        dpopJkt: null,
+        oauthClientId: PUBLIC_CLIENT_ID,
+      };
+
+      const db = createRefreshIntrospectDb([row]);
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const result = await service.introspectToken(plain);
+
+      expect(result).toEqual({
+        active: true,
+        sub: USER_ID,
+        client_id: PUBLIC_CLIENT_ID,
+        scope: 'openid email',
+        exp: Math.floor(expiresAt.getTime() / 1000),
+        iat: Math.floor(createdAt.getTime() / 1000),
+        iss: env.jwtIssuer,
+        token_type: 'refresh_token',
+      });
+    });
+
+    it('returns active: false for revoked refresh token', async () => {
+      const plain = 'opaque-refresh-revoked';
+      const row = {
+        scope: 'openid',
+        userId: USER_ID,
+        expiresAt: new Date(Date.now() + 3600_000),
+        revokedAt: new Date(),
+        createdAt: new Date(),
+        dpopJkt: null,
+        oauthClientId: PUBLIC_CLIENT_ID,
+      };
+
+      const db = createRefreshIntrospectDb([row]);
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      await expect(service.introspectToken(plain)).resolves.toEqual({ active: false });
+    });
+
+    it('includes cnf.jkt and DPoP+access_token for DPoP-bound access token', async () => {
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const accessToken = await issueAccessToken(testSigningKey, {
+        issuer: env.jwtIssuer,
+        subject: USER_ID,
+        audience: PUBLIC_CLIENT_ID,
+        scope: 'openid',
+        clientId: PUBLIC_CLIENT_ID,
+        expiresInSeconds: 3600,
+        dpopJkt: 'dpop-jkt-thumbprint',
+      });
+
+      const result = await service.introspectToken(accessToken);
+
+      expect(result).toMatchObject({
+        active: true,
+        token_type: 'DPoP+access_token',
+        cnf: { jkt: 'dpop-jkt-thumbprint' },
+      });
+    });
+
+    it('returns active: false for unknown token', async () => {
+      const db = createRefreshIntrospectDb([]);
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      await expect(service.introspectToken('totally-unknown')).resolves.toEqual({ active: false });
+    });
+
+    it('uses token_type_hint to order lookups without changing the result', async () => {
+      const plain = 'opaque-refresh-hint';
+      const createdAt = new Date('2024-06-01T12:00:00.000Z');
+      const expiresAt = new Date(Date.now() + 3600_000);
+
+      const row = {
+        scope: 'openid',
+        userId: USER_ID,
+        expiresAt,
+        revokedAt: null,
+        createdAt,
+        dpopJkt: null,
+        oauthClientId: PUBLIC_CLIENT_ID,
+      };
+
+      const db = createRefreshIntrospectDb([row]);
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      signingKeyService.getJwks.mockClear();
+
+      const withoutHint = await service.introspectToken(plain);
+      expect(signingKeyService.getJwks).toHaveBeenCalled();
+
+      signingKeyService.getJwks.mockClear();
+
+      const withHint = await service.introspectToken(plain, 'refresh_token');
+      expect(signingKeyService.getJwks).not.toHaveBeenCalled();
+
+      expect(withHint).toEqual(withoutHint);
+      expect(withHint.active).toBe(true);
+    });
+
+    it('includes cnf.jkt on refresh token row when dpopJkt is set', async () => {
+      const plain = 'opaque-refresh-dpop';
+      const row = {
+        scope: 'openid',
+        userId: USER_ID,
+        expiresAt: new Date(Date.now() + 3600_000),
+        revokedAt: null,
+        createdAt: new Date('2024-06-01T12:00:00.000Z'),
+        dpopJkt: 'refresh-bound-jkt',
+        oauthClientId: PUBLIC_CLIENT_ID,
+      };
+
+      const db = createRefreshIntrospectDb([row]);
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const result = await service.introspectToken(plain, 'refresh_token');
+
+      expect(result).toMatchObject({
+        active: true,
+        token_type: 'refresh_token',
+        cnf: { jkt: 'refresh-bound-jkt' },
       });
     });
   });

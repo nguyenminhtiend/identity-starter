@@ -17,18 +17,21 @@ import {
   users,
 } from '@identity-starter/db';
 import { and, eq, isNull } from 'drizzle-orm';
+import * as jose from 'jose';
 
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import type { ClientResponse } from '../client/client.schemas.js';
 import { authenticateClient, getClient, getClientByClientId } from '../client/client.service.js';
-import { issueAccessToken, issueIdToken } from '../token/jwt.service.js';
+import { issueAccessToken, issueIdToken, verifyAccessToken } from '../token/jwt.service.js';
 import type { RefreshTokenService } from '../token/refresh-token.service.js';
 import { hashToken } from '../token/refresh-token.service.js';
 import type { SigningKeyService } from '../token/signing-key.service.js';
+import { TOKEN_EVENTS } from '../token/token.events.js';
 import { OAUTH_EVENTS } from './oauth.events.js';
 import type {
   AuthorizeQueryInput,
   ConsentInput,
+  IntrospectResponse,
   RevokeInput,
   TokenRequestInput,
   TokenResponse,
@@ -680,6 +683,151 @@ async function revokeToken(deps: OAuthServiceDeps, input: RevokeInput): Promise<
     .where(and(eq(refreshTokens.token, tokenHash), isNull(refreshTokens.revokedAt)));
 }
 
+function extractCnfJkt(payload: jose.JWTPayload): { jkt: string } | undefined {
+  const raw = payload.cnf;
+  if (raw === undefined || raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return undefined;
+  }
+  const jkt = (raw as { jkt?: unknown }).jkt;
+  if (typeof jkt !== 'string' || jkt === '') {
+    return undefined;
+  }
+  return { jkt };
+}
+
+async function introspectFromAccessJwt(
+  deps: OAuthServiceDeps,
+  token: string,
+): Promise<IntrospectResponse | null> {
+  const jwks = await deps.signingKeyService.getJwks();
+  const localJwks = jose.createLocalJWKSet(jwks);
+  const verified = await verifyAccessToken(localJwks, token, deps.env.jwtIssuer);
+  if (!verified) {
+    return null;
+  }
+
+  const { payload } = verified;
+  const sub = typeof payload.sub === 'string' ? payload.sub : undefined;
+  if (sub === undefined || sub === '') {
+    return null;
+  }
+
+  const clientId = typeof payload.client_id === 'string' ? payload.client_id : undefined;
+  const scope = typeof payload.scope === 'string' ? payload.scope : undefined;
+  const exp = typeof payload.exp === 'number' ? payload.exp : undefined;
+  const iat = typeof payload.iat === 'number' ? payload.iat : undefined;
+  const iss = typeof payload.iss === 'string' ? payload.iss : deps.env.jwtIssuer;
+  const cnf = extractCnfJkt(payload);
+
+  const out: IntrospectResponse = {
+    active: true,
+    sub,
+    client_id: clientId,
+    scope,
+    exp,
+    iat,
+    iss,
+    token_type: cnf !== undefined ? 'DPoP+access_token' : 'access_token',
+  };
+
+  if (cnf !== undefined) {
+    out.cnf = cnf;
+  }
+
+  return out;
+}
+
+async function introspectFromRefresh(
+  deps: OAuthServiceDeps,
+  token: string,
+): Promise<IntrospectResponse | null> {
+  const tokenHash = hashToken(token);
+
+  const [row] = await deps.db
+    .select({
+      scope: refreshTokens.scope,
+      userId: refreshTokens.userId,
+      expiresAt: refreshTokens.expiresAt,
+      revokedAt: refreshTokens.revokedAt,
+      createdAt: refreshTokens.createdAt,
+      dpopJkt: refreshTokens.dpopJkt,
+      oauthClientId: oauthClients.clientId,
+    })
+    .from(refreshTokens)
+    .innerJoin(oauthClients, eq(refreshTokens.clientId, oauthClients.id))
+    .where(eq(refreshTokens.token, tokenHash))
+    .limit(1);
+
+  if (!row) {
+    return null;
+  }
+
+  if (row.revokedAt !== null && row.revokedAt !== undefined) {
+    return { active: false };
+  }
+
+  if (row.expiresAt.getTime() <= Date.now()) {
+    return { active: false };
+  }
+
+  const out: IntrospectResponse = {
+    active: true,
+    sub: row.userId,
+    client_id: row.oauthClientId,
+    scope: row.scope,
+    exp: Math.floor(row.expiresAt.getTime() / 1000),
+    iat: Math.floor(row.createdAt.getTime() / 1000),
+    iss: deps.env.jwtIssuer,
+    token_type: 'refresh_token',
+  };
+
+  if (row.dpopJkt !== null && row.dpopJkt !== undefined && row.dpopJkt !== '') {
+    out.cnf = { jkt: row.dpopJkt };
+  }
+
+  return out;
+}
+
+async function introspectToken(
+  deps: OAuthServiceDeps,
+  token: string,
+  tokenTypeHint?: string,
+): Promise<IntrospectResponse> {
+  const publish = async (result: IntrospectResponse) => {
+    await deps.eventBus.publish(
+      createDomainEvent(TOKEN_EVENTS.TOKEN_INTROSPECTED, { active: result.active }),
+    );
+  };
+
+  if (tokenTypeHint === 'refresh_token') {
+    const refreshFirst = await introspectFromRefresh(deps, token);
+    if (refreshFirst !== null) {
+      await publish(refreshFirst);
+      return refreshFirst;
+    }
+    const jwtSecond = await introspectFromAccessJwt(deps, token);
+    if (jwtSecond !== null) {
+      await publish(jwtSecond);
+      return jwtSecond;
+    }
+  } else {
+    const jwtFirst = await introspectFromAccessJwt(deps, token);
+    if (jwtFirst !== null) {
+      await publish(jwtFirst);
+      return jwtFirst;
+    }
+    const refreshSecond = await introspectFromRefresh(deps, token);
+    if (refreshSecond !== null) {
+      await publish(refreshSecond);
+      return refreshSecond;
+    }
+  }
+
+  const inactive: IntrospectResponse = { active: false };
+  await publish(inactive);
+  return inactive;
+}
+
 async function getUserInfo(
   deps: OAuthServiceDeps,
   userId: string,
@@ -714,6 +862,8 @@ export function createOAuthService(deps: OAuthServiceDeps) {
       exchangeToken(deps, request, authenticatedClient),
     revokeToken: (input: RevokeInput) => revokeToken(deps, input),
     getUserInfo: (userId: string, scope: string) => getUserInfo(deps, userId, scope),
+    introspectToken: (token: string, tokenTypeHint?: string) =>
+      introspectToken(deps, token, tokenTypeHint),
   };
 }
 
