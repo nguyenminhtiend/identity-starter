@@ -11,6 +11,11 @@ const EnvSchema = z.object({
   WEBAUTHN_RP_ID: z.string().default('localhost'),
   WEBAUTHN_ORIGIN: z.url().default('http://localhost:3000'),
   SESSION_TTL_SECONDS: z.coerce.number().default(604800),
+  JWT_ISSUER: z.url().default('http://localhost:3000'),
+  ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().default(3600),
+  REFRESH_TOKEN_TTL_SECONDS: z.coerce.number().default(2592000),
+  AUTH_CODE_TTL_SECONDS: z.coerce.number().default(600),
+  REFRESH_GRACE_PERIOD_SECONDS: z.coerce.number().default(10),
   TOTP_ENCRYPTION_KEY: z.string().length(64).optional(),
 });
 

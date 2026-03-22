@@ -26,6 +26,7 @@
     "fastify": "^5.8.2",
     "fastify-plugin": "^5.1.0",
     "fastify-type-provider-zod": "^6.1.0",
+    "jose": "^6.2.2",
     "otpauth": "^9.5.0",
     "pino": "^10.3.1",
     "uuid": "^13.0.0",
