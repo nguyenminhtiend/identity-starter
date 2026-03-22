@@ -57,6 +57,10 @@ export const clientWithSecretResponseSchema = clientResponseSchema.extend({
 
 export type ClientWithSecretResponse = z.infer<typeof clientWithSecretResponseSchema>;
 
+export const rotateSecretResponseSchema = z.object({
+  clientSecret: z.string().min(1),
+});
+
 export const clientIdParamSchema = z.object({
   id: z.uuid(),
 });
