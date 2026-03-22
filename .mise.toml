@@ -15,6 +15,10 @@ run = "pnpm --filter @identity-starter/server dev"
 description = "Start web app in dev mode"
 run = "pnpm --filter @identity-starter/web dev"
 
+[tasks."dev:admin"]
+description = "Start admin app in dev mode"
+run = "pnpm --filter @identity-starter/admin dev"
+
 # ── Build ────────────────────────────────────────────────
 [tasks.build]
 description = "Build all packages"
