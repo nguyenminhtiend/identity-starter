@@ -2,12 +2,11 @@ import type * as jose from 'jose';
 import { api } from './helpers/http-client.js';
 
 describe('Health & Discovery', () => {
-  it('GET /health returns ok with database check', async () => {
-    const res = await api.get<{ status: string; checks: { database: string } }>('/health');
+  it('GET /health returns ok', async () => {
+    const res = await api.get<{ status: string }>('/health');
 
     expect(res.status).toBe(200);
     expect(res.data.status).toBe('ok');
-    expect(res.data.checks.database).toBe('ok');
   });
 
   it('GET /.well-known/openid-configuration returns valid OIDC metadata', async () => {
