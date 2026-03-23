@@ -1,7 +1,7 @@
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { env } from '../../core/env.js';
-import { setSessionCookie } from '../../core/plugins/auth.js';
+import { getSessionCookieName, setSessionCookie } from '../../core/plugins/auth.js';
 import {
   authenticationVerifyBodySchema,
   authResponseSchema,
@@ -67,7 +67,7 @@ export const passkeyRoutes: FastifyPluginAsyncZod = async (fastify) => {
         ipAddress: request.ip,
         userAgent: request.headers['user-agent'],
       });
-      setSessionCookie(reply, result.token, env.SESSION_TTL_SECONDS);
+      setSessionCookie(reply, result.token, env.SESSION_TTL_SECONDS, getSessionCookieName(request));
       return reply.send(result);
     },
   );

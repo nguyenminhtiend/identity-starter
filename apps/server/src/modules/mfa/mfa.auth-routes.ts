@@ -1,6 +1,6 @@
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import { env } from '../../core/env.js';
-import { setSessionCookie } from '../../core/plugins/auth.js';
+import { getSessionCookieName, setSessionCookie } from '../../core/plugins/auth.js';
 import { mfaVerifyResponseSchema, mfaVerifySchema } from './mfa.schemas.js';
 import { createMfaService } from './mfa.service.js';
 
@@ -22,7 +22,7 @@ export const mfaAuthRoutes: FastifyPluginAsyncZod = async (fastify) => {
         ipAddress: request.ip,
         userAgent: request.headers['user-agent'],
       });
-      setSessionCookie(reply, result.token, env.SESSION_TTL_SECONDS);
+      setSessionCookie(reply, result.token, env.SESSION_TTL_SECONDS, getSessionCookieName(request));
       return reply.send(result);
     },
   );
