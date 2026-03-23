@@ -80,14 +80,14 @@ export function AuditLogFilters() {
         />
       </div>
       <Select
-        value={searchParams.get('resourceType') ?? ''}
-        onValueChange={(v) => updateParams('resourceType', v)}
+        value={searchParams.get('resourceType') ?? 'all'}
+        onValueChange={(v) => updateParams('resourceType', v === 'all' ? '' : v)}
       >
         <SelectTrigger className="w-40">
           <SelectValue placeholder="All resources" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">All resources</SelectItem>
+          <SelectItem value="all">All resources</SelectItem>
           <SelectItem value="user">User</SelectItem>
           <SelectItem value="session">Session</SelectItem>
           <SelectItem value="role">Role</SelectItem>

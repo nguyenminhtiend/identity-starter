@@ -58,14 +58,14 @@ export function UserFilters() {
         />
       </div>
       <Select
-        value={searchParams.get('status') ?? ''}
-        onValueChange={(v) => updateParams('status', v)}
+        value={searchParams.get('status') ?? 'all'}
+        onValueChange={(v) => updateParams('status', v === 'all' ? '' : v)}
       >
         <SelectTrigger className="w-40">
           <SelectValue placeholder="All statuses" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="">All statuses</SelectItem>
+          <SelectItem value="all">All statuses</SelectItem>
           <SelectItem value="active">Active</SelectItem>
           <SelectItem value="suspended">Suspended</SelectItem>
           <SelectItem value="pending_verification">Pending</SelectItem>

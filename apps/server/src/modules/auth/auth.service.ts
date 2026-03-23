@@ -92,7 +92,6 @@ export async function login(
   meta: { ipAddress?: string; userAgent?: string },
 ): Promise<AuthResponse | MfaChallengeResponse> {
   const ipAddress = meta.ipAddress ?? '0.0.0.0';
-
   const failureCount = await getRecentFailureCount(db, input.email);
   const delaySec = calculateDelay(failureCount);
   if (delaySec > 0) {
