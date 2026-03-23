@@ -7,8 +7,11 @@ Learning + reference implementation of an identity provider (IdP). Modular monol
 | Path | Purpose |
 |---|---|
 | `apps/server` | Fastify backend — modules in `src/modules/`, has its own detailed CLAUDE.md |
-| `packages/core` | `Result<T,E>` monad (`ok`/`err`/`unwrap`), `DomainError` hierarchy (`NotFoundError`, `ConflictError`, `ValidationError`), `Brand<T,B>` nominal types, pagination types |
-| `packages/db` | Drizzle ORM — `createDb(url)`, schema definitions in `src/schema/`, migration runner |
+| `apps/admin` | Next.js 16 admin dashboard — user/role/session/audit management, port 3002, has its own CLAUDE.md |
+| `apps/web` | Next.js 16 user-facing auth app — login/register/MFA/passkeys/OAuth, port 3100, has its own CLAUDE.md |
+| `packages/core` | `Result<T,E>` monad, `DomainError` hierarchy, `Brand<T,B>` nominal types, pagination — has its own CLAUDE.md |
+| `packages/db` | Drizzle ORM — schema definitions, `createDb(url)`, migration runner, seed — has its own CLAUDE.md |
+| `packages/ui` | Shared UI library — Radix primitives, `serverFetch`/`clientFetch`, shared components — has its own CLAUDE.md |
 | `packages/redis` | ioredis wrapper — `createRedisClient(config)`, `healthCheck(client)` |
 | `packages/config` | Shared `biome.json`, `tsconfig.base.json`, `vitest.shared.ts` |
 
