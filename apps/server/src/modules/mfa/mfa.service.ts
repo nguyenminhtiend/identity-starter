@@ -1,4 +1,4 @@
-import crypto from 'node:crypto';
+import crypto, { createHmac } from 'node:crypto';
 import {
   ConflictError,
   NotFoundError,
@@ -17,11 +17,26 @@ import { and, count, eq, gt, isNull } from 'drizzle-orm';
 import * as OTPAuth from 'otpauth';
 import { decrypt, encrypt } from '../../core/crypto.js';
 import { env } from '../../core/env.js';
-import { hashPassword, verifyPassword } from '../../core/password.js';
+import { verifyPassword } from '../../core/password.js';
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import { createSession } from '../session/session.service.js';
 import { MFA_EVENTS } from './mfa.events.js';
 import type { MfaVerifyInput, MfaVerifyResponse } from './mfa.schemas.js';
+
+function hmacRecoveryCode(code: string, key: string): string {
+  return createHmac('sha256', key).update(code).digest('hex');
+}
+
+function createTotpInstance(secret: OTPAuth.Secret, label?: string): OTPAuth.TOTP {
+  return new OTPAuth.TOTP({
+    issuer: env.WEBAUTHN_RP_NAME,
+    label: label ?? '',
+    secret,
+    algorithm: 'SHA1',
+    digits: 6,
+    period: 30,
+  });
+}
 
 export function generateRecoveryCodesRaw(): string[] {
   const codes: string[] = [];
@@ -77,14 +92,7 @@ export async function enrollTotp(
     .where(and(eq(totpSecrets.userId, userId), eq(totpSecrets.verified, false)));
 
   const secret = new OTPAuth.Secret({ size: 20 });
-  const totp = new OTPAuth.TOTP({
-    issuer: env.WEBAUTHN_RP_NAME,
-    label: userRow.email,
-    secret,
-    algorithm: 'SHA1',
-    digits: 6,
-    period: 30,
-  });
+  const totp = createTotpInstance(secret, userRow.email);
 
   const encryptedSecret = encrypt(secret.hex, encryptionKey);
 
@@ -99,7 +107,7 @@ export async function enrollTotp(
   await db.delete(recoveryCodes).where(eq(recoveryCodes.userId, userId));
 
   for (const code of rawCodes) {
-    const codeHash = await hashPassword(code);
+    const codeHash = hmacRecoveryCode(code, encryptionKey);
     await db.insert(recoveryCodes).values({
       userId,
       codeHash,
@@ -129,14 +137,7 @@ export async function verifyTotpEnrollment(
 
   const secretHex = decrypt(secretRow.secret, encryptionKey);
   const secret = OTPAuth.Secret.fromHex(secretHex);
-  const totp = new OTPAuth.TOTP({
-    issuer: env.WEBAUTHN_RP_NAME,
-    label: '',
-    secret,
-    algorithm: 'SHA1',
-    digits: 6,
-    period: 30,
-  });
+  const totp = createTotpInstance(secret);
 
   const delta = totp.validate({ token: otp, window: 1 });
   if (delta === null) {
@@ -202,8 +203,9 @@ export async function regenerateRecoveryCodes(
 
   const rawCodes = generateRecoveryCodesRaw();
 
+  const hmacKey = requireTotpKey();
   for (const code of rawCodes) {
-    const codeHash = await hashPassword(code);
+    const codeHash = hmacRecoveryCode(code, hmacKey);
     await db.insert(recoveryCodes).values({
       userId,
       codeHash,
@@ -282,14 +284,7 @@ export async function verifyMfaChallenge(
 
     const secretHex = decrypt(totpRow.secret, encryptionKey);
     const secret = OTPAuth.Secret.fromHex(secretHex);
-    const totp = new OTPAuth.TOTP({
-      issuer: env.WEBAUTHN_RP_NAME,
-      label: '',
-      secret,
-      algorithm: 'SHA1',
-      digits: 6,
-      period: 30,
-    });
+    const totp = createTotpInstance(secret);
 
     const delta = totp.validate({ token: input.otp ?? '', window: 1 });
     if (delta === null) {
@@ -301,10 +296,11 @@ export async function verifyMfaChallenge(
       .from(recoveryCodes)
       .where(and(eq(recoveryCodes.userId, userId), isNull(recoveryCodes.usedAt)));
 
+    const hmacKey = requireTotpKey();
+    const incomingHash = hmacRecoveryCode(input.recoveryCode ?? '', hmacKey);
     let matchedId: string | null = null;
     for (const r of codeRows) {
-      const ok = await verifyPassword(r.codeHash, input.recoveryCode ?? '');
-      if (ok) {
+      if (r.codeHash === incomingHash) {
         matchedId = r.id;
         break;
       }

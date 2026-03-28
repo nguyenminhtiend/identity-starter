@@ -26,12 +26,13 @@ import {
   resetPasswordResponseSchema,
   resetPasswordSchema,
 } from './password-reset.schemas.js';
-import { requestPasswordReset, resetPassword } from './password-reset.service.js';
+import { createPasswordResetService } from './password-reset.service.js';
 
 export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
   const { db, eventBus } = fastify.container;
   const authService = createAuthService({ db, eventBus });
   const emailVerificationService = createEmailVerificationService({ db, eventBus });
+  const passwordResetService = createPasswordResetService({ db, eventBus });
 
   fastify.post(
     '/register',
@@ -133,11 +134,13 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       config: { rateLimit: { max: 3, timeWindow: '15 minutes' } },
     },
     async (request, reply) => {
-      const token = await requestPasswordReset(db, eventBus, request.body.email);
+      const token = await passwordResetService.requestReset(request.body.email);
+      if (token !== null && env.NODE_ENV === 'development') {
+        request.log.debug({ resetToken: token }, 'password reset token (dev only)');
+      }
       return reply.status(200).send({
         message:
           'If an account exists for this email, you will receive password reset instructions.',
-        resetToken: token ?? undefined,
       });
     },
   );
@@ -152,7 +155,7 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
     },
     async (request, reply) => {
-      await resetPassword(db, eventBus, request.body);
+      await passwordResetService.reset(request.body);
       return reply.status(200).send({ message: 'Password reset successfully' });
     },
   );

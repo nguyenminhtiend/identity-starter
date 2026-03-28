@@ -1,3 +1,4 @@
+import { createHmac } from 'node:crypto';
 import {
   ConflictError,
   NotFoundError,
@@ -8,7 +9,7 @@ import type { Database } from '@identity-starter/db';
 import * as OTPAuth from 'otpauth';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encrypt } from '../../../core/crypto.js';
-import { InMemoryEventBus } from '../../../infra/event-bus.js';
+import { type DomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js';
 import { MFA_EVENTS } from '../mfa.events.js';
 
 vi.stubEnv('DATABASE_URL', 'postgresql://127.0.0.1:5432/unit_test');
@@ -24,11 +25,9 @@ vi.mock('../../../core/env.js', () => ({
   },
 }));
 
-const mockHashPassword = vi.fn();
 const mockVerifyPassword = vi.fn();
 
 vi.mock('../../../core/password.js', () => ({
-  hashPassword: (...args: unknown[]) => mockHashPassword(...args),
   verifyPassword: (...args: unknown[]) => mockVerifyPassword(...args),
 }));
 
@@ -106,11 +105,6 @@ describe('generateRecoveryCodesRaw', () => {
 });
 
 describe('enrollTotp', () => {
-  beforeEach(() => {
-    mockHashPassword.mockReset();
-    mockHashPassword.mockResolvedValue('$hash');
-  });
-
   it('throws ValidationError when TOTP_ENCRYPTION_KEY is missing', async () => {
     mockEnvState.TOTP_ENCRYPTION_KEY = undefined;
     const db = {} as unknown as Database;
@@ -161,7 +155,13 @@ describe('enrollTotp', () => {
         verified: false,
       }),
     );
-    expect(mockHashPassword).toHaveBeenCalledTimes(8);
+    const key = mockEnvState.TOTP_ENCRYPTION_KEY ?? '';
+    for (const code of result.recoveryCodes) {
+      const expected = createHmac('sha256', key).update(code).digest('hex');
+      expect(
+        valuesSpy.mock.calls.some((c) => (c[0] as { codeHash?: string }).codeHash === expected),
+      ).toBe(true);
+    }
   });
 });
 
@@ -290,8 +290,6 @@ describe('disableTotp', () => {
 describe('regenerateRecoveryCodes', () => {
   beforeEach(() => {
     mockVerifyPassword.mockReset();
-    mockHashPassword.mockReset();
-    mockHashPassword.mockResolvedValue('$hash');
   });
 
   it('throws ValidationError when verified TOTP missing', async () => {
@@ -331,7 +329,13 @@ describe('regenerateRecoveryCodes', () => {
     const codes = await regenerateRecoveryCodes(db, eventBus, userId, 'pw');
 
     expect(codes).toHaveLength(8);
-    expect(mockHashPassword).toHaveBeenCalledTimes(8);
+    const key = mockEnvState.TOTP_ENCRYPTION_KEY ?? '';
+    for (const code of codes) {
+      const expected = createHmac('sha256', key).update(code).digest('hex');
+      expect(
+        valuesSpy.mock.calls.some((c) => (c[0] as { codeHash?: string }).codeHash === expected),
+      ).toBe(true);
+    }
     expect(names).toContain(MFA_EVENTS.RECOVERY_CODES_GENERATED);
   });
 });
@@ -497,8 +501,10 @@ describe('verifyMfaChallenge', () => {
   });
 
   it('consumes recovery code path and publishes RECOVERY_CODE_USED', async () => {
-    mockVerifyPassword.mockReset();
-    mockVerifyPassword.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const recoveryCode = 'CODE-HERE';
+    const codeHash = createHmac('sha256', mockEnvState.TOTP_ENCRYPTION_KEY ?? '')
+      .update(recoveryCode)
+      .digest('hex');
 
     const db = {
       select: vi
@@ -517,8 +523,8 @@ describe('verifyMfaChallenge', () => {
         )
         .mockReturnValueOnce(
           selectFromWhereRows([
-            { id: 'rc-1', userId, codeHash: '$a', usedAt: null, createdAt: new Date() },
-            { id: 'rc-2', userId, codeHash: '$b', usedAt: null, createdAt: new Date() },
+            { id: 'rc-1', userId, codeHash: 'nomatch', usedAt: null, createdAt: new Date() },
+            { id: 'rc-2', userId, codeHash, usedAt: null, createdAt: new Date() },
           ]),
         )
         .mockReturnValueOnce(selectFromWhereRows([{ n: 1n }]))
@@ -530,20 +536,24 @@ describe('verifyMfaChallenge', () => {
       }),
     } as unknown as Database;
     const eventBus = new InMemoryEventBus();
-    const used: { remaining: number }[] = [];
-    eventBus.subscribe(MFA_EVENTS.RECOVERY_CODE_USED, (e) => {
-      used.push(e.payload as { remaining: number });
-    });
+    const publishSpy = vi.spyOn(eventBus, 'publish');
 
     const result = await verifyMfaChallenge(
       db,
       eventBus,
-      { mfaToken: 'mfa-tok', recoveryCode: 'CODE-HERE' },
+      { mfaToken: 'mfa-tok', recoveryCode },
       {},
     );
 
     expect(result.token).toBeDefined();
-    expect(used).toHaveLength(1);
-    expect(used[0].remaining).toBe(1);
+    const recoveryUsed = publishSpy.mock.calls.find(
+      (c) =>
+        (c[0] as DomainEvent<{ remaining: number }>).eventName === MFA_EVENTS.RECOVERY_CODE_USED,
+    );
+    expect(recoveryUsed).toBeDefined();
+    if (!recoveryUsed) {
+      throw new Error('expected RECOVERY_CODE_USED publish');
+    }
+    expect((recoveryUsed[0] as DomainEvent<{ remaining: number }>).payload.remaining).toBe(1);
   });
 });

@@ -26,7 +26,6 @@ export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
 
 export const authResponseSchema = z.object({
   token: z.string(),
-  verificationToken: z.string().optional(),
   user: z.object({
     id: z.uuid(),
     email: z.email(),
@@ -37,7 +36,6 @@ export const authResponseSchema = z.object({
 
 export interface AuthResponse {
   token: string;
-  verificationToken?: string;
   user: {
     id: string;
     email: string;

@@ -14,6 +14,10 @@ import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import { ADMIN_EVENTS } from './admin.events.js';
 import type { UpdateUserStatusInput, UserListQuery } from './admin.schemas.js';
 
+function escapeLikePattern(input: string): string {
+  return input.replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
 interface SessionListQuery {
   page: number;
   limit: number;
@@ -26,7 +30,8 @@ export async function listUsers(db: Database, query: UserListQuery) {
     conditions.push(eq(users.status, query.status));
   }
   if (query.email) {
-    conditions.push(ilike(users.email, `%${query.email}%`));
+    const escaped = escapeLikePattern(query.email);
+    conditions.push(ilike(users.email, `%${escaped}%`));
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;

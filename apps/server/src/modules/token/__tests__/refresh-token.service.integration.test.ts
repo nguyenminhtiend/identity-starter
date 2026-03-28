@@ -16,7 +16,7 @@ afterAll(async () => {
 });
 
 describe('refresh token service integration', () => {
-  it('create → rotate → old revoked; grace replay returns same successor; reuse after grace revokes family', async () => {
+  it('create → rotate → old revoked stores successor hash; grace replay rotates successor; reuse after grace revokes family', async () => {
     const eventBus = new InMemoryEventBus();
     const service = createRefreshTokenService({ db: testDb.db, eventBus });
 
@@ -73,10 +73,18 @@ describe('refresh token service integration', () => {
       .from(refreshTokens)
       .where(eq(refreshTokens.token, hashToken(firstPlain)));
     expect(oldRow[0]?.revokedAt).not.toBeNull();
-    expect(oldRow[0]?.rotationGracePlaintext).toBe(secondPlain);
+    expect(oldRow[0]?.rotationGracePlaintext).toBe(hashToken(secondPlain));
 
     const graceAgain = await service.rotateRefreshToken(firstPlain, 10);
-    expect(graceAgain).toBe(secondPlain);
+    expect(graceAgain).not.toBe(secondPlain);
+    expect(graceAgain.length).toBeGreaterThan(0);
+    const graceHash = hashToken(graceAgain);
+    const graceRows = await testDb.db
+      .select()
+      .from(refreshTokens)
+      .where(eq(refreshTokens.token, graceHash));
+    expect(graceRows).toHaveLength(1);
+    expect(graceRows[0]?.revokedAt).toBeNull();
 
     const agedRevokedAt = new Date(Date.now() - 15_000);
     await testDb.db

@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
-import { ConflictError, UnauthorizedError } from '@identity-starter/core';
+import { ConflictError, TooManyRequestsError, UnauthorizedError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
 import { mfaChallenges, userColumns, users } from '@identity-starter/db';
 import { eq } from 'drizzle-orm';
+import { isUniqueViolation } from '../../core/db-utils.js';
 import { hashPassword, verifyPassword } from '../../core/password.js';
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import { checkMfaEnrolled } from '../mfa/mfa.service.js';
@@ -21,14 +22,9 @@ import { calculateDelay, getRecentFailureCount, recordAttempt } from './login-at
 type SafeRow = typeof userColumns;
 type SafeRowResult = { [K in keyof SafeRow]: SafeRow[K]['_']['data'] };
 
-function toAuthResponse(
-  row: SafeRowResult,
-  token: string,
-  verificationToken?: string,
-): AuthResponse {
+function toAuthResponse(row: SafeRowResult, token: string): AuthResponse {
   return {
     token,
-    ...(verificationToken !== undefined ? { verificationToken } : {}),
     user: {
       id: row.id,
       email: row.email,
@@ -36,18 +32,6 @@ function toAuthResponse(
       status: row.status as AuthResponse['user']['status'],
     },
   };
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  const pgCode = (error as { code?: string }).code;
-  if (pgCode === '23505') {
-    return true;
-  }
-  const cause = (error as { cause?: { code?: string } }).cause;
-  return cause?.code === '23505';
 }
 
 export async function register(
@@ -76,11 +60,11 @@ export async function register(
 
   const session = await createSession(db, eventBus, { userId: userRow.id });
 
-  const verificationToken = await generateVerificationToken(db, userRow.id);
+  await generateVerificationToken(db, userRow.id);
 
   await eventBus.publish(createDomainEvent(AUTH_EVENTS.REGISTERED, { userId: userRow.id }));
 
-  return toAuthResponse(userRow, session.token, verificationToken);
+  return toAuthResponse(userRow, session.token);
 }
 
 const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -95,9 +79,7 @@ export async function login(
   const failureCount = await getRecentFailureCount(db, input.email);
   const delaySec = calculateDelay(failureCount);
   if (delaySec > 0) {
-    await new Promise<void>((resolve) => {
-      setTimeout(resolve, delaySec * 1000);
-    });
+    throw new TooManyRequestsError(delaySec);
   }
 
   const [row] = await db.select().from(users).where(eq(users.email, input.email)).limit(1);

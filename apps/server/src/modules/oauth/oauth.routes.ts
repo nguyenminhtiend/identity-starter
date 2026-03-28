@@ -29,6 +29,8 @@ import {
 } from './oauth.schemas.js';
 import { createOAuthService } from './oauth.service.js';
 
+const ALLOWED_ORIGINS = new Set(env.CORS_ORIGINS.split(',').map((s) => s.trim()));
+
 function extractClientCredentials(
   request: FastifyRequest,
 ): { clientId: string; clientSecret: string } | null {
@@ -86,7 +88,7 @@ async function setOAuthTokenEndpointCors(
   reply: FastifyReply,
 ): Promise<void> {
   const origin = request.headers.origin;
-  if (origin) {
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
     reply.header('Access-Control-Allow-Origin', origin);
     reply.header('Access-Control-Allow-Methods', 'POST');
     reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, DPoP');

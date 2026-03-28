@@ -1,4 +1,4 @@
-import { ConflictError, NotFoundError } from '@identity-starter/core';
+import { NotFoundError } from '@identity-starter/core';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 import { serializerCompiler, validatorCompiler } from 'fastify-type-provider-zod';
@@ -9,7 +9,6 @@ import { InMemoryEventBus } from '../../../infra/event-bus.js';
 import { makeSession } from '../../session/__tests__/session.factory.js';
 import { makeUser } from './user.factory.js';
 
-const mockCreateUser = vi.fn();
 const mockFindUserById = vi.fn();
 
 vi.mock('../user.service.js', async (importOriginal) => {
@@ -17,7 +16,6 @@ vi.mock('../user.service.js', async (importOriginal) => {
   return {
     ...actual,
     createUserService: vi.fn(() => ({
-      create: mockCreateUser,
       findById: mockFindUserById,
     })),
   };
@@ -56,103 +54,7 @@ describe('user routes', () => {
   });
 
   beforeEach(() => {
-    mockCreateUser.mockReset();
     mockFindUserById.mockReset();
-  });
-
-  describe('POST /api/users', () => {
-    const validBody = {
-      email: 'test@example.com',
-      displayName: 'Test User',
-    };
-
-    it('returns 201 with created user on success', async () => {
-      const user = makeUser({ email: 'test@example.com', displayName: 'Test User' });
-      mockCreateUser.mockResolvedValue(user);
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/users',
-        payload: validBody,
-      });
-
-      expect(response.statusCode).toBe(201);
-      const body = response.json();
-      expect(body.email).toBe('test@example.com');
-      expect(body.displayName).toBe('Test User');
-      expect(body).not.toHaveProperty('passwordHash');
-    });
-
-    it('returns 409 on duplicate email', async () => {
-      mockCreateUser.mockRejectedValue(new ConflictError('User', 'email', 'test@example.com'));
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/users',
-        payload: validBody,
-      });
-
-      expect(response.statusCode).toBe(409);
-      expect(response.json()).toHaveProperty('error');
-    });
-
-    it('returns 400 on missing email', async () => {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/users',
-        payload: { displayName: 'Test' },
-      });
-
-      expect(response.statusCode).toBe(400);
-    });
-
-    it('returns 400 on invalid email format', async () => {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/users',
-        payload: { ...validBody, email: 'not-an-email' },
-      });
-
-      expect(response.statusCode).toBe(400);
-    });
-
-    it('returns 400 on missing displayName', async () => {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/users',
-        payload: { email: 'test@example.com' },
-      });
-
-      expect(response.statusCode).toBe(400);
-    });
-
-    it('returns 400 on empty displayName', async () => {
-      const response = await app.inject({
-        method: 'POST',
-        url: '/api/users',
-        payload: { ...validBody, displayName: '' },
-      });
-
-      expect(response.statusCode).toBe(400);
-    });
-
-    it('calls userService.create with parsed input', async () => {
-      const user = makeUser();
-      mockCreateUser.mockResolvedValue(user);
-
-      await app.inject({
-        method: 'POST',
-        url: '/api/users',
-        payload: validBody,
-      });
-
-      expect(mockCreateUser).toHaveBeenCalledWith(
-        expect.objectContaining({
-          email: 'test@example.com',
-          displayName: 'Test User',
-        }),
-      );
-    });
   });
 
   describe('GET /api/users/:id', () => {

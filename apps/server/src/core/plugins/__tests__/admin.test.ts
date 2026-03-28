@@ -9,65 +9,38 @@ import { containerPlugin } from '../../container-plugin.js';
 import { adminPlugin } from '../admin.js';
 import { errorHandlerPlugin } from '../error-handler.js';
 
-function makeMockDbForAdmin(isAdmin: boolean): Database {
-  const limit = vi.fn().mockResolvedValue([{ isAdmin }]);
-  const where = vi.fn().mockReturnValue({ limit });
-  const from = vi.fn().mockReturnValue({ where });
-  return {
-    select: vi.fn().mockReturnValue({ from }),
-  } as unknown as Database;
+const mocks = vi.hoisted(() => ({
+  hasPermission: vi.fn<() => Promise<boolean>>(),
+}));
+
+vi.mock('../../../modules/rbac/rbac.service.js', () => ({
+  hasPermission: mocks.hasPermission,
+}));
+
+function makeMockDb(isAdmin: boolean): Database {
+  const select = vi.fn().mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        limit: vi.fn().mockResolvedValue(isAdmin ? [{ isAdmin: true }] : []),
+      }),
+    }),
+  });
+  return { select } as unknown as Database;
 }
 
 describe('adminPlugin requireAdmin', () => {
   const userId = '550e8400-e29b-41d4-a716-446655440000';
 
-  describe('when user is not admin', () => {
+  describe('when user has RBAC permission', () => {
     let app: FastifyInstance;
 
     beforeAll(async () => {
+      mocks.hasPermission.mockResolvedValue(true);
+
       app = Fastify({ logger: false });
       await app.register(containerPlugin, {
         container: {
-          db: makeMockDbForAdmin(false),
-          eventBus: new InMemoryEventBus(),
-        } satisfies Container,
-      });
-
-      app.decorateRequest('session', null as unknown as { id: string; userId: string });
-      app.decorateRequest('userId', '');
-
-      app.decorate('requireSession', async (request: FastifyRequest) => {
-        request.session = { id: 'sess-1', userId };
-        request.userId = userId;
-      });
-
-      await app.register(errorHandlerPlugin);
-      await app.register(adminPlugin);
-      await app.ready();
-    });
-
-    afterAll(async () => {
-      await app.close();
-    });
-
-    it('throws ForbiddenError', async () => {
-      const request = {
-        headers: { authorization: 'Bearer t' },
-      } as unknown as FastifyRequest;
-
-      await expect(app.requireAdmin(request)).rejects.toThrow(ForbiddenError);
-      await expect(app.requireAdmin(request)).rejects.toThrow('Admin access required');
-    });
-  });
-
-  describe('when user is admin', () => {
-    let app: FastifyInstance;
-
-    beforeAll(async () => {
-      app = Fastify({ logger: false });
-      await app.register(containerPlugin, {
-        container: {
-          db: makeMockDbForAdmin(true),
+          db: makeMockDb(false),
           eventBus: new InMemoryEventBus(),
         } satisfies Container,
       });
@@ -98,26 +71,16 @@ describe('adminPlugin requireAdmin', () => {
     });
   });
 
-  describe('session before admin check', () => {
+  describe('when user has legacy isAdmin flag', () => {
     let app: FastifyInstance;
-    const callOrder: string[] = [];
 
     beforeAll(async () => {
+      mocks.hasPermission.mockResolvedValue(false);
+
       app = Fastify({ logger: false });
-
-      const limit = vi.fn().mockImplementation(async () => {
-        callOrder.push('db');
-        return [{ isAdmin: true }];
-      });
-      const where = vi.fn().mockReturnValue({ limit });
-      const from = vi.fn().mockReturnValue({ where });
-      const db = {
-        select: vi.fn().mockReturnValue({ from }),
-      } as unknown as Database;
-
       await app.register(containerPlugin, {
         container: {
-          db,
+          db: makeMockDb(true),
           eventBus: new InMemoryEventBus(),
         } satisfies Container,
       });
@@ -125,14 +88,10 @@ describe('adminPlugin requireAdmin', () => {
       app.decorateRequest('session', null as unknown as { id: string; userId: string });
       app.decorateRequest('userId', '');
 
-      app.decorate(
-        'requireSession',
-        vi.fn(async (request: FastifyRequest) => {
-          callOrder.push('session');
-          request.session = { id: 'sess-1', userId };
-          request.userId = userId;
-        }),
-      );
+      app.decorate('requireSession', async (request: FastifyRequest) => {
+        request.session = { id: 'sess-1', userId };
+        request.userId = userId;
+      });
 
       await app.register(errorHandlerPlugin);
       await app.register(adminPlugin);
@@ -143,16 +102,53 @@ describe('adminPlugin requireAdmin', () => {
       await app.close();
     });
 
-    it('calls requireSession before querying the database', async () => {
-      callOrder.length = 0;
+    it('resolves without error via isAdmin fallback', async () => {
       const request = {
         headers: { authorization: 'Bearer t' },
       } as unknown as FastifyRequest;
 
-      await app.requireAdmin(request);
+      await expect(app.requireAdmin(request)).resolves.toBeUndefined();
+    });
+  });
 
-      expect(callOrder).toEqual(['session', 'db']);
-      expect(app.requireSession).toHaveBeenCalled();
+  describe('when user has neither RBAC nor isAdmin', () => {
+    let app: FastifyInstance;
+
+    beforeAll(async () => {
+      mocks.hasPermission.mockResolvedValue(false);
+
+      app = Fastify({ logger: false });
+      await app.register(containerPlugin, {
+        container: {
+          db: makeMockDb(false),
+          eventBus: new InMemoryEventBus(),
+        } satisfies Container,
+      });
+
+      app.decorateRequest('session', null as unknown as { id: string; userId: string });
+      app.decorateRequest('userId', '');
+
+      app.decorate('requireSession', async (request: FastifyRequest) => {
+        request.session = { id: 'sess-1', userId };
+        request.userId = userId;
+      });
+
+      await app.register(errorHandlerPlugin);
+      await app.register(adminPlugin);
+      await app.ready();
+    });
+
+    afterAll(async () => {
+      await app.close();
+    });
+
+    it('throws ForbiddenError', async () => {
+      const request = {
+        headers: { authorization: 'Bearer t' },
+      } as unknown as FastifyRequest;
+
+      await expect(app.requireAdmin(request)).rejects.toThrow(ForbiddenError);
+      await expect(app.requireAdmin(request)).rejects.toThrow('Admin access required');
     });
   });
 });

@@ -1,5 +1,6 @@
-import { users } from '@identity-starter/db';
-import { eq } from 'drizzle-orm';
+import assert from 'node:assert';
+import { emailVerificationTokens, users } from '@identity-starter/db';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import * as OTPAuth from 'otpauth';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -20,6 +21,19 @@ afterAll(async () => {
   await testDb.teardown();
 });
 
+async function latestUnusedVerificationTokenForEmail(email: string): Promise<string> {
+  const [user] = await testDb.db.select().from(users).where(eq(users.email, email)).limit(1);
+  assert(user);
+  const [row] = await testDb.db
+    .select()
+    .from(emailVerificationTokens)
+    .where(and(eq(emailVerificationTokens.userId, user.id), isNull(emailVerificationTokens.usedAt)))
+    .orderBy(desc(emailVerificationTokens.createdAt))
+    .limit(1);
+  assert(row);
+  return row.token;
+}
+
 describe('POST /api/auth/register', () => {
   it('returns 201 with token and user', async () => {
     const input = makeRegisterInput();
@@ -32,7 +46,6 @@ describe('POST /api/auth/register', () => {
     expect(response.statusCode).toBe(201);
     const body = response.json();
     expect(body.token).toBeDefined();
-    expect(body.verificationToken).toBeDefined();
     expect(body.user.email).toBe(input.email);
     expect(body.user.displayName).toBe(input.displayName);
     expect(body.user.id).toBeDefined();
@@ -266,7 +279,8 @@ describe('POST /api/auth/verify-email', () => {
       url: '/api/auth/register',
       payload: input,
     });
-    const { verificationToken, user } = regResponse.json();
+    const { user } = regResponse.json() as { user: { id: string } };
+    const verificationToken = await latestUnusedVerificationTokenForEmail(input.email);
 
     const response = await app.inject({
       method: 'POST',
@@ -294,7 +308,7 @@ describe('POST /api/auth/verify-email', () => {
 });
 
 describe('POST /api/auth/resend-verification', () => {
-  it('returns a new verification token for pending user', async () => {
+  it('returns success message for pending user (no token in body)', async () => {
     const input = makeRegisterInput();
     await app.inject({
       method: 'POST',
@@ -310,8 +324,8 @@ describe('POST /api/auth/resend-verification', () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.verificationToken).toBeDefined();
     expect(body.message).toContain('sent');
+    expect(body).not.toHaveProperty('verificationToken');
   });
 
   it('returns generic message for unknown email', async () => {
@@ -323,7 +337,7 @@ describe('POST /api/auth/resend-verification', () => {
 
     expect(response.statusCode).toBe(200);
     const body = response.json();
-    expect(body.verificationToken).toBeUndefined();
+    expect(body).not.toHaveProperty('verificationToken');
     expect(body.message).toContain('eligible');
   });
 });

@@ -94,7 +94,6 @@ export async function resendVerification(db: Database, userId: string): Promise<
 
 export interface ResendVerificationForEmailResult {
   message: string;
-  verificationToken?: string;
 }
 
 export async function resendVerificationForEmail(
@@ -109,12 +108,9 @@ export async function resendVerificationForEmail(
     return { message: genericMessage };
   }
 
-  const verificationToken = await resendVerification(db, user.id);
+  await resendVerification(db, user.id);
 
-  return {
-    message: 'Verification email has been sent.',
-    verificationToken,
-  };
+  return { message: 'Verification email has been sent.' };
 }
 
 export interface EmailVerificationServiceDeps {

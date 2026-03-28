@@ -17,7 +17,7 @@ import { adminPlugin } from './core/plugins/admin.js';
 import { authPlugin } from './core/plugins/auth.js';
 import { errorHandlerPlugin } from './core/plugins/error-handler.js';
 import { rbacPlugin } from './core/plugins/rbac.js';
-import { validateSession } from './modules/session/session.service.js';
+import { deleteExpiredSessions, validateSession } from './modules/session/session.service.js';
 
 export interface AppOptions {
   container: Container;
@@ -34,7 +34,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   app.setSerializerCompiler(serializerCompiler);
 
   await app.register(cors, {
-    origin: env.WEBAUTHN_ORIGIN,
+    origin: env.CORS_ORIGINS.split(',').map((s) => s.trim()),
     credentials: true,
   });
   await app.register(helmet);
@@ -57,6 +57,23 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(healthRoutes);
 
   await registerModules(app);
+
+  if (env.NODE_ENV !== 'test') {
+    const CLEANUP_INTERVAL_MS = 6 * 60 * 60 * 1000;
+    app.addHook('onReady', () => {
+      const interval = setInterval(async () => {
+        try {
+          await deleteExpiredSessions(options.container.db);
+        } catch (err) {
+          app.log.error(err, 'Session cleanup failed');
+        }
+      }, CLEANUP_INTERVAL_MS);
+
+      app.addHook('onClose', () => {
+        clearInterval(interval);
+      });
+    });
+  }
 
   return app;
 }

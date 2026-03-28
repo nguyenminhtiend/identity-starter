@@ -1,6 +1,7 @@
+import assert from 'node:assert';
 import { UnauthorizedError } from '@identity-starter/core';
 import { emailVerificationTokens, users } from '@identity-starter/db';
-import { eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type DomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js';
 import { createTestDb, type TestDb } from '../../../test/db-helper.js';
@@ -29,6 +30,17 @@ beforeEach(() => {
   eventBus = new InMemoryEventBus();
 });
 
+async function latestUnusedVerificationTokenForUser(userId: string): Promise<string> {
+  const [row] = await testDb.db
+    .select()
+    .from(emailVerificationTokens)
+    .where(and(eq(emailVerificationTokens.userId, userId), isNull(emailVerificationTokens.usedAt)))
+    .orderBy(desc(emailVerificationTokens.createdAt))
+    .limit(1);
+  assert(row);
+  return row.token;
+}
+
 describe('generateVerificationToken', () => {
   it('persists a token row with 24h expiry', async () => {
     const input = makeRegisterInput();
@@ -54,11 +66,8 @@ describe('generateVerificationToken', () => {
 describe('verifyEmail', () => {
   it('sets user active and verified and marks token used', async () => {
     const input = makeRegisterInput();
-    const { user, verificationToken } = await register(testDb.db, eventBus, input);
-    expect(verificationToken).toBeDefined();
-    if (!verificationToken) {
-      throw new Error('expected verificationToken');
-    }
+    const { user } = await register(testDb.db, eventBus, input);
+    const verificationToken = await latestUnusedVerificationTokenForUser(user.id);
 
     await verifyEmail(testDb.db, eventBus, verificationToken);
 
@@ -81,10 +90,8 @@ describe('verifyEmail', () => {
     });
 
     const input = makeRegisterInput();
-    const { user, verificationToken } = await register(testDb.db, eventBus, input);
-    if (!verificationToken) {
-      throw new Error('expected verificationToken');
-    }
+    const { user } = await register(testDb.db, eventBus, input);
+    const verificationToken = await latestUnusedVerificationTokenForUser(user.id);
 
     await verifyEmail(testDb.db, eventBus, verificationToken);
 
@@ -94,10 +101,8 @@ describe('verifyEmail', () => {
 
   it('rejects reuse of consumed token', async () => {
     const input = makeRegisterInput();
-    const { verificationToken } = await register(testDb.db, eventBus, input);
-    if (!verificationToken) {
-      throw new Error('expected verificationToken');
-    }
+    const { user } = await register(testDb.db, eventBus, input);
+    const verificationToken = await latestUnusedVerificationTokenForUser(user.id);
 
     await verifyEmail(testDb.db, eventBus, verificationToken);
 
@@ -116,10 +121,8 @@ describe('verifyEmail', () => {
 describe('resendVerification', () => {
   it('invalidates prior unused token and returns a new one', async () => {
     const input = makeRegisterInput();
-    const { user, verificationToken: first } = await register(testDb.db, eventBus, input);
-    if (!first) {
-      throw new Error('expected verificationToken');
-    }
+    const { user } = await register(testDb.db, eventBus, input);
+    const first = await latestUnusedVerificationTokenForUser(user.id);
 
     const second = await resendVerification(testDb.db, user.id);
     expect(second).not.toBe(first);
@@ -133,18 +136,18 @@ describe('resendVerification', () => {
 });
 
 describe('resendVerificationForEmail', () => {
-  it('returns token for pending unverified user', async () => {
+  it('returns sent message for pending unverified user', async () => {
     const input = makeRegisterInput();
     await register(testDb.db, eventBus, input);
 
     const result = await resendVerificationForEmail(testDb.db, input.email);
     expect(result.message).toContain('sent');
-    expect(result.verificationToken).toBeDefined();
+    expect(result).not.toHaveProperty('verificationToken');
   });
 
   it('returns generic message without token for unknown email', async () => {
     const result = await resendVerificationForEmail(testDb.db, 'nobody@example.com');
-    expect(result.verificationToken).toBeUndefined();
+    expect(result).not.toHaveProperty('verificationToken');
     expect(result.message).toContain('eligible');
   });
 });

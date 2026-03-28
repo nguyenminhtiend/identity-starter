@@ -38,12 +38,14 @@ vi.mock('../email-verification.service.js', () => ({
 }));
 
 vi.mock('../password-reset.service.js', () => ({
-  requestPasswordReset: mockRequestPasswordReset,
-  resetPassword: mockResetPassword,
+  createPasswordResetService: vi.fn(() => ({
+    requestReset: mockRequestPasswordReset,
+    reset: mockResetPassword,
+  })),
 }));
 
 vi.mock('../../../core/env.js', () => ({
-  env: { SESSION_TTL_SECONDS: 604800 },
+  env: { NODE_ENV: 'test', SESSION_TTL_SECONDS: 604800 },
 }));
 
 import { authRoutes } from '../auth.routes.js';
@@ -442,10 +444,9 @@ describe('auth routes', () => {
   });
 
   describe('POST /api/auth/resend-verification', () => {
-    it('returns 200 with message and optional token', async () => {
+    it('returns 200 with message', async () => {
       mockResendVerificationForEmail.mockResolvedValue({
         message: 'Verification email has been sent.',
-        verificationToken: 'new-token',
       });
 
       const response = await app.inject({
@@ -457,7 +458,6 @@ describe('auth routes', () => {
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual({
         message: 'Verification email has been sent.',
-        verificationToken: 'new-token',
       });
     });
 
@@ -487,7 +487,7 @@ describe('auth routes', () => {
   });
 
   describe('POST /api/auth/forgot-password', () => {
-    it('returns 200 with message and optional resetToken', async () => {
+    it('returns 200 with message only (no reset token in body)', async () => {
       mockRequestPasswordReset.mockResolvedValue('reset-token-value');
 
       const response = await app.inject({
@@ -499,11 +499,11 @@ describe('auth routes', () => {
       expect(response.statusCode).toBe(200);
       const body = response.json();
       expect(body.message).toBeDefined();
-      expect(body.resetToken).toBe('reset-token-value');
-      expect(mockRequestPasswordReset.mock.calls[0][2]).toBe('user@example.com');
+      expect(body).not.toHaveProperty('resetToken');
+      expect(mockRequestPasswordReset.mock.calls[0][0]).toBe('user@example.com');
     });
 
-    it('returns 200 without resetToken when service returns null', async () => {
+    it('returns 200 with message when service returns null', async () => {
       mockRequestPasswordReset.mockResolvedValue(null);
 
       const response = await app.inject({
@@ -514,7 +514,7 @@ describe('auth routes', () => {
 
       expect(response.statusCode).toBe(200);
       const body = response.json();
-      expect(body.resetToken).toBeUndefined();
+      expect(body).not.toHaveProperty('resetToken');
     });
 
     it('returns 400 on invalid email', async () => {
@@ -541,8 +541,6 @@ describe('auth routes', () => {
       expect(response.statusCode).toBe(200);
       expect(response.json().message).toBe('Password reset successfully');
       expect(mockResetPassword).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.anything(),
         expect.objectContaining({
           token: 'valid-reset-token',
           newPassword: 'newpassword1',

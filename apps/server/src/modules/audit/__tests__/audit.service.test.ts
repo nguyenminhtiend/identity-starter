@@ -367,7 +367,9 @@ describe('exportAuditLogs', () => {
     mocks.select.mockReturnValue({ from: mocks.from });
     mocks.from.mockReturnValue({
       where: vi.fn().mockReturnValue({
-        orderBy: vi.fn().mockResolvedValue(rows),
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(rows),
+        }),
       }),
     });
 
@@ -381,7 +383,9 @@ describe('exportAuditLogs', () => {
     mocks.select.mockReturnValue({ from: mocks.from });
     mocks.from.mockReturnValue({
       where: vi.fn().mockReturnValue({
-        orderBy: vi.fn().mockResolvedValue([]),
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
       }),
     });
 

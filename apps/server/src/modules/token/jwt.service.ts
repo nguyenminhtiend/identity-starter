@@ -100,6 +100,7 @@ export async function verifyAccessToken(
   jwksUrl: string | jose.JWTVerifyGetKey,
   token: string,
   issuer: string,
+  audience?: string,
 ): Promise<VerifyResult | null> {
   const keyResolver =
     typeof jwksUrl === 'string' ? jose.createRemoteJWKSet(new URL(jwksUrl)) : jwksUrl;
@@ -108,6 +109,7 @@ export async function verifyAccessToken(
     const { payload, protectedHeader } = await jose.jwtVerify(token, keyResolver, {
       issuer,
       algorithms: ['RS256'],
+      ...(audience !== undefined ? { audience } : {}),
     });
     return { payload, protectedHeader };
   } catch {

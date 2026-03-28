@@ -3,6 +3,7 @@ import { users } from '@identity-starter/db';
 import { eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
+import { hasPermission } from '../../modules/rbac/rbac.service.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -15,6 +16,11 @@ export const adminPlugin = fp(async (fastify) => {
 
   fastify.decorate('requireAdmin', async (request: FastifyRequest) => {
     await fastify.requireSession(request);
+
+    const allowed = await hasPermission(db, request.userId, 'admin', 'access');
+    if (allowed) {
+      return;
+    }
 
     const [user] = await db
       .select({ isAdmin: users.isAdmin })

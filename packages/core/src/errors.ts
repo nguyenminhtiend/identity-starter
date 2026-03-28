@@ -36,6 +36,16 @@ export class ForbiddenError extends DomainError {
   }
 }
 
+export class TooManyRequestsError extends DomainError {
+  public readonly retryAfter: number;
+
+  constructor(retryAfter: number) {
+    super('TOO_MANY_REQUESTS', `Too many requests. Retry after ${retryAfter} seconds`);
+    this.name = 'TooManyRequestsError';
+    this.retryAfter = retryAfter;
+  }
+}
+
 export class ValidationError extends DomainError {
   public readonly fields: Record<string, string>;
 

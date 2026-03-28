@@ -16,5 +16,4 @@ export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
 
 export const resendVerificationResponseSchema = z.object({
   message: z.string(),
-  verificationToken: z.string().optional(),
 });

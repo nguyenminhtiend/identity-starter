@@ -162,22 +162,26 @@ describe('resetPassword', () => {
     const userUpdateWhere = vi.fn().mockResolvedValue(undefined);
     const tokenUpdateWhere = vi.fn().mockResolvedValue(undefined);
 
+    const txUpdate = vi
+      .fn()
+      .mockReturnValueOnce({
+        set: vi.fn().mockReturnThis(),
+        where: userUpdateWhere,
+      })
+      .mockReturnValueOnce({
+        set: vi.fn().mockReturnThis(),
+        where: tokenUpdateWhere,
+      });
+
     const db = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
         limit: vi.fn().mockResolvedValue([tokenRow]),
       }),
-      update: vi
-        .fn()
-        .mockReturnValueOnce({
-          set: vi.fn().mockReturnThis(),
-          where: userUpdateWhere,
-        })
-        .mockReturnValueOnce({
-          set: vi.fn().mockReturnThis(),
-          where: tokenUpdateWhere,
-        }),
+      transaction: vi.fn(async (fn: (tx: { update: typeof txUpdate }) => Promise<void>) => {
+        await fn({ update: txUpdate });
+      }),
     } as unknown as Database;
 
     const eventBus = new InMemoryEventBus();
@@ -191,6 +195,7 @@ describe('resetPassword', () => {
     expect(mockHashPassword).toHaveBeenCalledWith('newpassword1');
     expect(mockRevokeAllUserSessions).toHaveBeenCalledWith(db, eventBus, tokenRow.userId);
     expect(completed).toEqual([{ userId: tokenRow.userId }]);
-    expect(db.update).toHaveBeenCalledTimes(2);
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+    expect(txUpdate).toHaveBeenCalledTimes(2);
   });
 });

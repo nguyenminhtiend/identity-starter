@@ -79,17 +79,19 @@ export async function resetPassword(
 
   const newHash = await hashPassword(input.newPassword);
 
-  await db
-    .update(users)
-    .set({ passwordHash: newHash, updatedAt: new Date() })
-    .where(eq(users.id, record.userId));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ passwordHash: newHash, updatedAt: new Date() })
+      .where(eq(users.id, record.userId));
+
+    await tx
+      .update(passwordResetTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(passwordResetTokens.id, record.id));
+  });
 
   await revokeAllUserSessions(db, eventBus, record.userId);
-
-  await db
-    .update(passwordResetTokens)
-    .set({ usedAt: new Date() })
-    .where(eq(passwordResetTokens.id, record.id));
 
   await eventBus.publish(
     createDomainEvent(AUTH_EVENTS.PASSWORD_RESET_COMPLETED, { userId: record.userId }),

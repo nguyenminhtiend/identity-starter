@@ -155,7 +155,7 @@ describe('refresh token service (unit)', () => {
     expect(newPlain).toBe(newBuf.toString('base64url'));
     expect(txSet).toHaveBeenCalledWith(
       expect.objectContaining({
-        rotationGracePlaintext: newPlain,
+        rotationGracePlaintext: hashToken(newPlain),
         revokedAt: expect.any(Date) as Date,
       }),
     );
@@ -303,32 +303,74 @@ describe('refresh token service (unit)', () => {
     expect(familyEvents).toHaveLength(1);
   });
 
-  it('rotateRefreshToken within grace returns same successor plaintext without revoking family', async () => {
+  it('rotateRefreshToken within grace rotates successor row and returns new plaintext without revoking family', async () => {
     const oldPlain = 'grace-refresh';
     const oldHash = hashToken(oldPlain);
-    const successor = 'same-successor-plain';
+    const successorPlain = 'same-successor-plain';
+    const successorHash = hashToken(successorPlain);
+    const graceBuf = Buffer.alloc(32, 0xef);
+    vi.mocked(randomBytes).mockReturnValueOnce(graceBuf);
+
     const revokedAt = new Date();
+    const now = Date.now();
 
-    const limit = vi.fn().mockResolvedValue([
-      {
-        id: 'row-1',
-        token: oldHash,
-        clientId: 'c1',
-        userId: 'u1',
-        scope: 'openid',
-        expiresAt: new Date(Date.now() + 86_400_000),
-        revokedAt,
-        rotationGracePlaintext: successor,
-        dpopJkt: null,
-        familyId: 'fam-1',
-        createdAt: new Date(Date.now() - 60_000),
-      },
-    ]);
-    const whereSel = vi.fn().mockReturnValue({ limit });
-    const fromSel = vi.fn().mockReturnValue({ where: whereSel });
-    const select = vi.fn().mockReturnValue({ from: fromSel });
+    const revokedRow = {
+      id: 'row-1',
+      token: oldHash,
+      clientId: 'c1',
+      userId: 'u1',
+      scope: 'openid',
+      expiresAt: new Date(now + 86_400_000),
+      revokedAt,
+      rotationGracePlaintext: successorHash,
+      dpopJkt: null,
+      familyId: 'fam-1',
+      createdAt: new Date(now - 60_000),
+    };
 
-    const db = { select } as unknown as Database;
+    const childRow = {
+      id: 'row-2',
+      token: successorHash,
+      clientId: 'c1',
+      userId: 'u1',
+      scope: 'openid',
+      expiresAt: new Date(now + 86_400_000),
+      revokedAt: null,
+      rotationGracePlaintext: null,
+      dpopJkt: null,
+      familyId: 'fam-1',
+      createdAt: new Date(now - 30_000),
+    };
+
+    const outerLimit = vi
+      .fn()
+      .mockResolvedValueOnce([revokedRow])
+      .mockResolvedValueOnce([childRow]);
+    const outerWhere = vi.fn().mockReturnValue({ limit: outerLimit });
+    const outerFrom = vi.fn().mockReturnValue({ where: outerWhere });
+    const outerSelect = vi.fn().mockReturnValue({ from: outerFrom });
+
+    const txLimit = vi.fn().mockResolvedValue([childRow]);
+    const txWhereSel = vi.fn().mockReturnValue({ limit: txLimit });
+    const txFrom = vi.fn().mockReturnValue({ where: txWhereSel });
+    const txSelect = vi.fn().mockReturnValue({ from: txFrom });
+
+    const txInsertValues = vi.fn().mockResolvedValue(undefined);
+    const txInsert = vi.fn().mockReturnValue({ values: txInsertValues });
+
+    const txWhereUp = vi.fn().mockResolvedValue(undefined);
+    const txSet = vi.fn().mockReturnValue({ where: txWhereUp });
+    const txUpdate = vi.fn().mockReturnValue({ set: txSet });
+
+    const transaction = vi.fn(async (fn: (tx: unknown) => Promise<void>) => {
+      await fn({
+        select: txSelect,
+        update: txUpdate,
+        insert: txInsert,
+      });
+    });
+
+    const db = { select: outerSelect, transaction } as unknown as Database;
 
     const familyEvents: unknown[] = [];
     eventBus.subscribe(TOKEN_EVENTS.REFRESH_FAMILY_REVOKED, (e) => {
@@ -337,7 +379,12 @@ describe('refresh token service (unit)', () => {
 
     const out = await rotateRefreshToken(db, eventBus, oldPlain, 10_000);
 
-    expect(out).toBe(successor);
+    expect(out).toBe(graceBuf.toString('base64url'));
+    expect(txSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rotationGracePlaintext: hashToken(graceBuf.toString('base64url')),
+      }),
+    );
     expect(familyEvents).toHaveLength(0);
   });
 

@@ -1,4 +1,4 @@
-import { DomainError, ValidationError } from '@identity-starter/core';
+import { DomainError, TooManyRequestsError, ValidationError } from '@identity-starter/core';
 import fp from 'fastify-plugin';
 import { hasZodFastifySchemaValidationErrors } from 'fastify-type-provider-zod';
 import { ZodError } from 'zod';
@@ -9,6 +9,7 @@ const STATUS_MAP: Record<string, number> = {
   VALIDATION_ERROR: 400,
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
+  TOO_MANY_REQUESTS: 429,
 };
 
 export const errorHandlerPlugin = fp(async (fastify) => {
@@ -26,6 +27,15 @@ export const errorHandlerPlugin = fp(async (fastify) => {
         error: 'Validation Error',
         code: 'VALIDATION_ERROR',
         details: err.issues,
+      });
+    }
+
+    if (err instanceof TooManyRequestsError) {
+      reply.header('Retry-After', String(err.retryAfter));
+      return reply.code(429).send({
+        error: err.message,
+        code: err.code,
+        retryAfter: err.retryAfter,
       });
     }
 

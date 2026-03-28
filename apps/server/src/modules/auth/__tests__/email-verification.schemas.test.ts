@@ -84,14 +84,14 @@ describe('resendVerificationResponseSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('accepts message with optional verificationToken', () => {
+  it('parses message and omits extra keys from output', () => {
     const result = resendVerificationResponseSchema.safeParse({
       message: 'sent',
       verificationToken: 'tok',
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.verificationToken).toBe('tok');
+      expect(result.data).toEqual({ message: 'sent' });
     }
   });
 

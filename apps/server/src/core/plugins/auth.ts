@@ -5,6 +5,8 @@ import fp from 'fastify-plugin';
 
 const DEFAULT_COOKIE_NAME = 'session';
 
+const VALID_COOKIE_NAMES = new Set([DEFAULT_COOKIE_NAME, 'admin_session']);
+
 export interface SessionLike {
   id: string;
   userId: string;
@@ -27,14 +29,12 @@ declare module 'fastify' {
   }
 }
 
-/**
- * Read the session cookie name from the `x-session-cookie` request header.
- * Allows each frontend app to use a distinct cookie name so that sessions
- * on the same domain (different ports) do not collide.
- */
 export function getSessionCookieName(request: FastifyRequest): string {
   const header = request.headers['x-session-cookie'];
-  return typeof header === 'string' && header.length > 0 ? header : DEFAULT_COOKIE_NAME;
+  if (typeof header === 'string' && VALID_COOKIE_NAMES.has(header)) {
+    return header;
+  }
+  return DEFAULT_COOKIE_NAME;
 }
 
 export const authPlugin = fp(async (fastify, opts: AuthPluginOptions) => {

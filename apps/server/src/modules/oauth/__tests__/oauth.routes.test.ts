@@ -39,6 +39,7 @@ vi.mock('../../../core/env.js', () => ({
     AUTH_CODE_TTL_SECONDS: 600,
     REFRESH_GRACE_PERIOD_SECONDS: 10,
     PAR_TTL_SECONDS: 60,
+    CORS_ORIGINS: 'http://localhost:3100,http://localhost:3002',
   },
 }));
 
@@ -294,7 +295,7 @@ describe('oauth routes', () => {
       const body = buildTokenRequestAuthCode();
       mocks.authenticateClient.mockResolvedValue(null);
       mocks.exchangeToken.mockResolvedValue(tokenResponse);
-      const origin = 'https://client.example';
+      const origin = 'http://localhost:3100';
 
       const response = await app.inject({
         method: 'POST',
@@ -310,6 +311,22 @@ describe('oauth routes', () => {
       expect(response.headers['access-control-allow-origin']).toBe(origin);
       expect(response.headers['access-control-allow-methods']).toBe('POST');
       expect(response.headers['access-control-allow-credentials']).toBe('true');
+    });
+
+    it('does not set CORS headers for disallowed origins', async () => {
+      const body = buildTokenRequestAuthCode();
+      mocks.authenticateClient.mockResolvedValue(null);
+      mocks.exchangeToken.mockResolvedValue(tokenResponse);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/token',
+        headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['access-control-allow-origin']).toBeUndefined();
     });
 
     it('returns 200 for refresh_token grant', async () => {
@@ -643,7 +660,7 @@ describe('oauth routes', () => {
       mocks.introspectToken.mockResolvedValue(introspection);
 
       const basic = Buffer.from('cid:secret').toString('base64');
-      const origin = 'https://introspect-client.example';
+      const origin = 'http://localhost:3100';
       const response = await app.inject({
         method: 'POST',
         url: '/oauth/introspect',
@@ -724,7 +741,7 @@ describe('oauth routes', () => {
   describe('POST /oauth/revoke', () => {
     it('returns 200', async () => {
       mocks.revokeToken.mockResolvedValue(undefined);
-      const origin = 'https://revoke-client.example';
+      const origin = 'http://localhost:3100';
 
       const response = await app.inject({
         method: 'POST',

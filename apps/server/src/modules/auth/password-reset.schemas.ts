@@ -7,7 +7,6 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 
 export const forgotPasswordResponseSchema = z.object({
   message: z.string(),
-  resetToken: z.string().optional(),
 });
 
 export const resetPasswordSchema = z.object({

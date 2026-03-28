@@ -28,11 +28,15 @@ const mocks = vi.hoisted(() => ({
   authenticateClient: vi.fn(),
 }));
 
-vi.mock('../../client/client.service.js', () => ({
-  getClientByClientId: mocks.getClientByClientId,
-  getClient: mocks.getClient,
-  authenticateClient: mocks.authenticateClient,
-}));
+vi.mock('../../client/client.service.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../client/client.service.js')>();
+  return {
+    ...actual,
+    getClientByClientId: mocks.getClientByClientId,
+    getClient: mocks.getClient,
+    authenticateClient: mocks.authenticateClient,
+  };
+});
 
 const INTERNAL_CLIENT_ID = '10000000-0000-7000-8000-000000000001';
 const PUBLIC_CLIENT_ID = 'public-client-id-hex';

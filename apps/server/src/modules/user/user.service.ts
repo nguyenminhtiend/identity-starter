@@ -2,6 +2,7 @@ import { ConflictError, NotFoundError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
 import { userColumns, users } from '@identity-starter/db';
 import { eq } from 'drizzle-orm';
+import { isUniqueViolation } from '../../core/db-utils.js';
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import { USER_EVENTS } from './user.events.js';
 import type { CreateUserInput, User, UserWithPassword } from './user.schemas.js';
@@ -29,18 +30,6 @@ function mapToUserWithPassword(row: FullRow): UserWithPassword {
     ...mapToUser(row),
     passwordHash: row.passwordHash,
   };
-}
-
-function isUniqueViolation(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  const pgCode = (error as { code?: string }).code;
-  if (pgCode === '23505') {
-    return true;
-  }
-  const cause = (error as { cause?: { code?: string } }).cause;
-  return cause?.code === '23505';
 }
 
 export async function createUser(

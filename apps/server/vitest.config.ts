@@ -16,7 +16,6 @@ export default defineConfig({
           exclude: ['src/**/*.integration.test.ts', 'dist/**', 'node_modules/**'],
           testTimeout: 10_000,
           hookTimeout: 10_000,
-          passWithNoTests: true,
         },
       },
       {
@@ -29,7 +28,6 @@ export default defineConfig({
           exclude: ['dist/**', 'node_modules/**'],
           testTimeout: 30_000,
           hookTimeout: 30_000,
-          passWithNoTests: true,
           globalSetup: ['src/test/setup-integration.ts'],
           pool: 'forks',
           sequence: { concurrent: false },

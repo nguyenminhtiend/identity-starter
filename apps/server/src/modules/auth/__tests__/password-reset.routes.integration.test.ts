@@ -1,3 +1,6 @@
+import assert from 'node:assert';
+import { passwordResetTokens, users } from '@identity-starter/db';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildTestApp } from '../../../test/app-builder.js';
@@ -17,8 +20,21 @@ afterAll(async () => {
   await testDb.teardown();
 });
 
+async function latestUnusedResetTokenForEmail(email: string): Promise<string> {
+  const [user] = await testDb.db.select().from(users).where(eq(users.email, email)).limit(1);
+  assert(user);
+  const [row] = await testDb.db
+    .select()
+    .from(passwordResetTokens)
+    .where(and(eq(passwordResetTokens.userId, user.id), isNull(passwordResetTokens.usedAt)))
+    .orderBy(desc(passwordResetTokens.createdAt))
+    .limit(1);
+  assert(row);
+  return row.token;
+}
+
 describe('POST /api/auth/forgot-password', () => {
-  it('returns 200 with message and resetToken when user exists', async () => {
+  it('returns 200 with message only when user exists (token not in body)', async () => {
     const input = makeRegisterInput();
     await app.inject({ method: 'POST', url: '/api/auth/register', payload: input });
 
@@ -31,8 +47,9 @@ describe('POST /api/auth/forgot-password', () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.message).toBeDefined();
-    expect(body.resetToken).toBeDefined();
-    expect(typeof body.resetToken).toBe('string');
+    expect(body).not.toHaveProperty('resetToken');
+    const token = await latestUnusedResetTokenForEmail(input.email);
+    expect(token.length).toBeGreaterThan(0);
   });
 
   it('returns 200 without resetToken when email is unknown', async () => {
@@ -64,12 +81,12 @@ describe('POST /api/auth/reset-password', () => {
     const input = makeRegisterInput();
     await app.inject({ method: 'POST', url: '/api/auth/register', payload: input });
 
-    const forgotResponse = await app.inject({
+    await app.inject({
       method: 'POST',
       url: '/api/auth/forgot-password',
       payload: { email: input.email },
     });
-    const { resetToken } = forgotResponse.json() as { resetToken?: string };
+    const resetToken = await latestUnusedResetTokenForEmail(input.email);
 
     const resetResponse = await app.inject({
       method: 'POST',
@@ -120,12 +137,12 @@ describe('password reset HTTP lifecycle', () => {
     });
     const sessionToken = (regResponse.json() as { token: string }).token;
 
-    const forgotResponse = await app.inject({
+    await app.inject({
       method: 'POST',
       url: '/api/auth/forgot-password',
       payload: { email: input.email },
     });
-    const { resetToken } = forgotResponse.json() as { resetToken: string };
+    const resetToken = await latestUnusedResetTokenForEmail(input.email);
 
     await app.inject({
       method: 'POST',

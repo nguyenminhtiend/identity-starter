@@ -28,6 +28,14 @@ beforeAll(async () => {
   eventBus = new InMemoryEventBus();
   app = await buildTestApp({ db: testDb.db, eventBus });
 
+  // Seed system roles (not included in migrations)
+  for (const name of ['super_admin', 'admin', 'user']) {
+    await testDb.db
+      .insert(roles)
+      .values({ name, description: `System ${name} role`, isSystem: true })
+      .onConflictDoNothing();
+  }
+
   const adminUser = await createUser(testDb.db, eventBus, makeCreateUserInput());
   await testDb.db.update(users).set({ status: 'active' }).where(eq(users.id, adminUser.id));
   const [superAdminRole] = await testDb.db

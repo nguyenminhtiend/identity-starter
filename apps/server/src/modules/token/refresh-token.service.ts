@@ -45,6 +45,83 @@ async function revokeAllNonRevokedInFamily(
   await eventBus.publish(createDomainEvent(TOKEN_EVENTS.REFRESH_FAMILY_REVOKED, { familyId }));
 }
 
+type RefreshTokenRow = typeof refreshTokens.$inferSelect;
+
+async function rotateActiveRefreshTokenRow(
+  db: Database,
+  eventBus: EventBus,
+  current: RefreshTokenRow,
+  now: Date,
+  dpopJkt?: string,
+): Promise<string> {
+  if (current.dpopJkt != null) {
+    if (dpopJkt !== current.dpopJkt) {
+      throw new UnauthorizedError('DPoP binding mismatch');
+    }
+  }
+
+  if (current.expiresAt.getTime() <= now.getTime()) {
+    throw new UnauthorizedError('Invalid refresh token');
+  }
+
+  const newPlain = generateRefreshTokenPlaintext();
+  const newHash = hashToken(newPlain);
+  const ttlMs = Math.max(current.expiresAt.getTime() - current.createdAt.getTime(), 60_000);
+  const newExpiresAt = new Date(now.getTime() + ttlMs);
+
+  await db.transaction(async (tx) => {
+    const [cur] = await tx
+      .select()
+      .from(refreshTokens)
+      .where(eq(refreshTokens.token, current.token))
+      .limit(1);
+
+    if (!cur || cur.revokedAt != null) {
+      throw new UnauthorizedError('Invalid refresh token');
+    }
+
+    if (cur.expiresAt.getTime() <= now.getTime()) {
+      throw new UnauthorizedError('Invalid refresh token');
+    }
+
+    await tx
+      .update(refreshTokens)
+      .set({
+        revokedAt: now,
+        rotationGracePlaintext: hashToken(newPlain),
+      })
+      .where(eq(refreshTokens.id, cur.id));
+
+    await tx.insert(refreshTokens).values({
+      token: newHash,
+      clientId: cur.clientId,
+      userId: cur.userId,
+      scope: cur.scope,
+      expiresAt: newExpiresAt,
+      familyId: cur.familyId,
+      dpopJkt: cur.dpopJkt ?? null,
+    });
+  });
+
+  await eventBus.publish(
+    createDomainEvent(TOKEN_EVENTS.REFRESH_REVOKED, {
+      familyId: current.familyId,
+      clientId: current.clientId,
+      userId: current.userId,
+    }),
+  );
+
+  await eventBus.publish(
+    createDomainEvent(TOKEN_EVENTS.REFRESH_ISSUED, {
+      familyId: current.familyId,
+      clientId: current.clientId,
+      userId: current.userId,
+    }),
+  );
+
+  return newPlain;
+}
+
 export async function createRefreshToken(
   db: Database,
   eventBus: EventBus,
@@ -96,18 +173,28 @@ export async function rotateRefreshToken(
     throw new UnauthorizedError('Invalid refresh token');
   }
 
-  if (row.dpopJkt != null) {
-    if (dpopJkt !== row.dpopJkt) {
-      throw new UnauthorizedError('DPoP binding mismatch');
-    }
-  }
-
   if (row.revokedAt) {
     const graceEndMs = row.revokedAt.getTime() + gracePeriodSeconds * 1000;
     const withinGrace = now.getTime() < graceEndMs;
 
     if (withinGrace && row.rotationGracePlaintext != null) {
-      return row.rotationGracePlaintext;
+      const [childRow] = await db
+        .select()
+        .from(refreshTokens)
+        .where(
+          and(
+            eq(refreshTokens.familyId, row.familyId),
+            eq(refreshTokens.token, row.rotationGracePlaintext),
+            isNull(refreshTokens.revokedAt),
+          ),
+        )
+        .limit(1);
+
+      if (childRow) {
+        return rotateActiveRefreshTokenRow(db, eventBus, childRow, now, dpopJkt);
+      }
+
+      throw new UnauthorizedError('Invalid refresh token');
     }
 
     if (withinGrace && row.rotationGracePlaintext == null) {
@@ -118,66 +205,17 @@ export async function rotateRefreshToken(
     throw new UnauthorizedError('Refresh token reuse detected');
   }
 
+  if (row.dpopJkt != null) {
+    if (dpopJkt !== row.dpopJkt) {
+      throw new UnauthorizedError('DPoP binding mismatch');
+    }
+  }
+
   if (row.expiresAt.getTime() <= now.getTime()) {
     throw new UnauthorizedError('Invalid refresh token');
   }
 
-  const newPlain = generateRefreshTokenPlaintext();
-  const newHash = hashToken(newPlain);
-  const ttlMs = Math.max(row.expiresAt.getTime() - row.createdAt.getTime(), 60_000);
-  const newExpiresAt = new Date(now.getTime() + ttlMs);
-
-  await db.transaction(async (tx) => {
-    const [current] = await tx
-      .select()
-      .from(refreshTokens)
-      .where(eq(refreshTokens.token, incomingHash))
-      .limit(1);
-
-    if (!current || current.revokedAt != null) {
-      throw new UnauthorizedError('Invalid refresh token');
-    }
-
-    if (current.expiresAt.getTime() <= now.getTime()) {
-      throw new UnauthorizedError('Invalid refresh token');
-    }
-
-    await tx
-      .update(refreshTokens)
-      .set({
-        revokedAt: now,
-        rotationGracePlaintext: newPlain,
-      })
-      .where(eq(refreshTokens.id, current.id));
-
-    await tx.insert(refreshTokens).values({
-      token: newHash,
-      clientId: current.clientId,
-      userId: current.userId,
-      scope: current.scope,
-      expiresAt: newExpiresAt,
-      familyId: current.familyId,
-      dpopJkt: current.dpopJkt ?? null,
-    });
-  });
-
-  await eventBus.publish(
-    createDomainEvent(TOKEN_EVENTS.REFRESH_REVOKED, {
-      familyId: row.familyId,
-      clientId: row.clientId,
-      userId: row.userId,
-    }),
-  );
-
-  await eventBus.publish(
-    createDomainEvent(TOKEN_EVENTS.REFRESH_ISSUED, {
-      familyId: row.familyId,
-      clientId: row.clientId,
-      userId: row.userId,
-    }),
-  );
-
-  return newPlain;
+  return rotateActiveRefreshTokenRow(db, eventBus, row, now, dpopJkt);
 }
 
 export async function revokeRefreshToken(

@@ -1,7 +1,7 @@
 import { NotFoundError, ValidationError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
 import { passkeyColumns, passkeys, sessionColumns, sessions, users } from '@identity-starter/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, gt } from 'drizzle-orm';
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import { ACCOUNT_EVENTS } from './account.events.js';
 import type { PasskeyListItem, ProfileResponse, UpdateProfileInput } from './account.schemas.js';
@@ -98,7 +98,10 @@ export async function listSessions(
     isCurrent: boolean;
   }>
 > {
-  const rows = await db.select(sessionColumns).from(sessions).where(eq(sessions.userId, userId));
+  const rows = await db
+    .select(sessionColumns)
+    .from(sessions)
+    .where(and(eq(sessions.userId, userId), gt(sessions.expiresAt, new Date())));
 
   return rows.map((row) => ({
     id: row.id,

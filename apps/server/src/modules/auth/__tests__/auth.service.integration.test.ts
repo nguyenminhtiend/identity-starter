@@ -2,7 +2,7 @@ import assert from 'node:assert';
 import { ConflictError, UnauthorizedError } from '@identity-starter/core';
 import { users } from '@identity-starter/db';
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { type DomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js';
 import { createTestDb, type TestDb } from '../../../test/db-helper.js';
 import { validateSession } from '../../session/session.service.js';
@@ -32,8 +32,6 @@ describe('register', () => {
 
     expect(result.token).toBeDefined();
     expect(result.token.length).toBeGreaterThan(0);
-    expect(result.verificationToken).toBeDefined();
-    expect(result.verificationToken?.length).toBeGreaterThan(0);
     expect(result.user.email).toBe(input.email);
     expect(result.user.displayName).toBe(input.displayName);
     expect(result.user.id).toBeDefined();
@@ -172,7 +170,7 @@ describe('login', () => {
     ).rejects.toThrow(UnauthorizedError);
   });
 
-  it('applies progressive delay after five failed logins', async () => {
+  it('returns 429-equivalent TooManyRequestsError after progressive delay threshold', async () => {
     const input = makeRegisterInput();
     await register(testDb.db, eventBus, input);
 
@@ -185,31 +183,14 @@ describe('login', () => {
       ).catch(() => {});
     }
 
-    const originalSetTimeout = globalThis.setTimeout.bind(globalThis);
-    const setTimeoutSpy = vi
-      .spyOn(globalThis, 'setTimeout')
-      .mockImplementation((handler: TimerHandler, timeout?: number, ...args: unknown[]) => {
-        if (timeout === 1000 && typeof handler === 'function') {
-          (handler as (...a: unknown[]) => void)(...args);
-          return 0 as unknown as ReturnType<typeof setTimeout>;
-        }
-        return originalSetTimeout(handler, timeout ?? 0, ...(args as []));
-      });
-
-    try {
-      await expect(
-        login(
-          testDb.db,
-          eventBus,
-          { email: input.email, password: 'wrong-password' },
-          { ipAddress: '127.0.0.1' },
-        ),
-      ).rejects.toThrow(UnauthorizedError);
-
-      expect(setTimeoutSpy).toHaveBeenCalled();
-    } finally {
-      setTimeoutSpy.mockRestore();
-    }
+    await expect(
+      login(
+        testDb.db,
+        eventBus,
+        { email: input.email, password: 'wrong-password' },
+        { ipAddress: '127.0.0.1' },
+      ),
+    ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS', retryAfter: 1 });
   });
 });
 

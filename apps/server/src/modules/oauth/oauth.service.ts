@@ -21,7 +21,12 @@ import * as jose from 'jose';
 
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import type { ClientResponse } from '../client/client.schemas.js';
-import { authenticateClient, getClient, getClientByClientId } from '../client/client.service.js';
+import {
+  authenticateClient,
+  getClient,
+  getClientByClientId,
+  mapToClientResponse,
+} from '../client/client.service.js';
 import { issueAccessToken, issueIdToken, verifyAccessToken } from '../token/jwt.service.js';
 import type { RefreshTokenService } from '../token/refresh-token.service.js';
 import { hashToken } from '../token/refresh-token.service.js';
@@ -119,33 +124,6 @@ function appendQueryParams(baseUrl: string, params: Record<string, string>): str
     url.searchParams.set(key, value);
   }
   return url.toString();
-}
-
-type OauthClientSafeRow = {
-  [K in keyof typeof oauthClientColumns]: (typeof oauthClientColumns)[K]['_']['data'];
-};
-
-function mapOAuthClientRow(row: OauthClientSafeRow): ClientResponse {
-  return {
-    id: row.id,
-    clientId: row.clientId,
-    clientName: row.clientName,
-    description: row.description ?? null,
-    redirectUris: row.redirectUris,
-    grantTypes: row.grantTypes as ClientResponse['grantTypes'],
-    responseTypes: row.responseTypes as ClientResponse['responseTypes'],
-    scope: row.scope,
-    tokenEndpointAuthMethod:
-      row.tokenEndpointAuthMethod as ClientResponse['tokenEndpointAuthMethod'],
-    isConfidential: row.isConfidential,
-    logoUri: row.logoUri ?? null,
-    tosUri: row.tosUri ?? null,
-    policyUri: row.policyUri ?? null,
-    applicationType: row.applicationType as ClientResponse['applicationType'],
-    status: row.status as ClientResponse['status'],
-    createdAt: row.createdAt,
-    updatedAt: row.updatedAt,
-  };
 }
 
 async function loadMergedConsentScopes(
@@ -255,15 +233,7 @@ async function authorize(
 ): Promise<AuthorizeResult> {
   assertAuthorizeQuery(query);
 
-  let client: ClientResponse;
-  try {
-    client = await getClientByClientId(deps.db, query.client_id);
-  } catch (error) {
-    if (error instanceof NotFoundError) {
-      throw error;
-    }
-    throw error;
-  }
+  const client = await getClientByClientId(deps.db, query.client_id);
 
   if (client.status === 'suspended') {
     throw new ForbiddenError('Client is suspended');
@@ -590,7 +560,7 @@ async function exchangeAuthorizationCode(
       throw new UnauthorizedError('Invalid authorization code');
     }
 
-    const client = mapOAuthClientRow(cRow as OauthClientSafeRow);
+    const client = mapToClientResponse(cRow as Parameters<typeof mapToClientResponse>[0]);
 
     if (request.client_id !== undefined && request.client_id !== client.clientId) {
       throw new UnauthorizedError('Invalid authorization code');

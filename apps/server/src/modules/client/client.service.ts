@@ -3,6 +3,7 @@ import { ConflictError, NotFoundError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
 import { oauthClientColumns, oauthClients } from '@identity-starter/db';
 import { eq } from 'drizzle-orm';
+import { isUniqueViolation } from '../../core/db-utils.js';
 import { hashPassword, verifyPassword } from '../../core/password.js';
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import { CLIENT_EVENTS } from './client.events.js';
@@ -16,19 +17,7 @@ import type {
 type SafeRow = typeof oauthClientColumns;
 type SafeRowResult = { [K in keyof SafeRow]: SafeRow[K]['_']['data'] };
 
-function isUniqueViolation(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-  const pgCode = (error as { code?: string }).code;
-  if (pgCode === '23505') {
-    return true;
-  }
-  const cause = (error as { cause?: { code?: string } }).cause;
-  return cause?.code === '23505';
-}
-
-function mapToClientResponse(row: SafeRowResult): ClientResponse {
+export function mapToClientResponse(row: SafeRowResult): ClientResponse {
   return {
     id: row.id,
     clientId: row.clientId,

@@ -9,6 +9,8 @@ function computeHash(id: string, action: string, createdAt: Date): string {
   return createHash('sha256').update(`${id}${action}${createdAt.toISOString()}`).digest('hex');
 }
 
+const MAX_EXPORT_ROWS = 100_000;
+
 function buildWhereConditions(filters: {
   actorId?: string;
   action?: string;
@@ -92,7 +94,12 @@ export async function exportAuditLogs(db: Database, query: AuditExportQuery) {
   const conditions = buildWhereConditions(query);
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
-  return db.select().from(auditLogs).where(where).orderBy(asc(auditLogs.createdAt));
+  return db
+    .select()
+    .from(auditLogs)
+    .where(where)
+    .orderBy(asc(auditLogs.createdAt))
+    .limit(MAX_EXPORT_ROWS);
 }
 
 export async function verifyAuditChain(db: Database): Promise<{
@@ -101,38 +108,61 @@ export async function verifyAuditChain(db: Database): Promise<{
   checkedEntries: number;
   firstInvalidEntryId: string | null;
 }> {
-  const entries = await db.select().from(auditLogs).orderBy(asc(auditLogs.createdAt));
+  const BATCH_SIZE = 1000;
+  let offset = 0;
+  let previousHash: string | null = null;
+  let totalEntries = 0;
+  let isFirstEntry = true;
 
-  if (entries.length === 0) {
-    return { valid: true, totalEntries: 0, checkedEntries: 0, firstInvalidEntryId: null };
-  }
+  while (true) {
+    const batch = await db
+      .select()
+      .from(auditLogs)
+      .orderBy(asc(auditLogs.createdAt))
+      .limit(BATCH_SIZE)
+      .offset(offset);
 
-  if (entries[0].prevHash !== null) {
-    return {
-      valid: false,
-      totalEntries: entries.length,
-      checkedEntries: 1,
-      firstInvalidEntryId: entries[0].id,
-    };
-  }
-
-  for (let i = 1; i < entries.length; i++) {
-    const prev = entries[i - 1];
-    const expectedHash = computeHash(prev.id, prev.action, prev.createdAt);
-    if (entries[i].prevHash !== expectedHash) {
-      return {
-        valid: false,
-        totalEntries: entries.length,
-        checkedEntries: i + 1,
-        firstInvalidEntryId: entries[i].id,
-      };
+    if (batch.length === 0) {
+      break;
     }
+
+    for (const entry of batch) {
+      totalEntries++;
+
+      if (isFirstEntry) {
+        if (entry.prevHash !== null) {
+          return {
+            valid: false,
+            totalEntries,
+            checkedEntries: 1,
+            firstInvalidEntryId: entry.id,
+          };
+        }
+        isFirstEntry = false;
+      } else {
+        if (entry.prevHash !== previousHash) {
+          return {
+            valid: false,
+            totalEntries,
+            checkedEntries: totalEntries,
+            firstInvalidEntryId: entry.id,
+          };
+        }
+      }
+
+      previousHash = computeHash(entry.id, entry.action, entry.createdAt);
+    }
+
+    if (batch.length < BATCH_SIZE) {
+      break;
+    }
+    offset += BATCH_SIZE;
   }
 
   return {
     valid: true,
-    totalEntries: entries.length,
-    checkedEntries: entries.length,
+    totalEntries,
+    checkedEntries: totalEntries,
     firstInvalidEntryId: null,
   };
 }
