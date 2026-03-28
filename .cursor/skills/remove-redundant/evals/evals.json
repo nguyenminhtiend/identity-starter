@@ -1,0 +1,33 @@
+{
+  "skill_name": "remove-redundant",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "REDUNDANT-1 — isUniqueViolation is copy-pasted in auth, user, and client services. extract it to a shared utility and update all imports",
+      "expected_output": "Creates src/core/db-utils.ts with isUniqueViolation. Updates imports in auth.service.ts, user.service.ts, client.service.ts. Deletes all 3 local copies. Adds unit test for the shared utility.",
+      "files": [
+        "apps/server/src/modules/auth/auth.service.ts",
+        "apps/server/src/modules/user/user.service.ts",
+        "apps/server/src/modules/client/client.service.ts",
+        "docs/AUDIT_REPORT.md"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "fix REDUNDANT-2 and REDUNDANT-3 — the OAuth client mapping is duplicated and TOTP construction appears 3 times in mfa.service.ts",
+      "expected_output": "Exports mapToClientResponse from client module barrel, imports in oauth.service.ts, deletes mapOAuthClientRow. Extracts createTotpInstance helper in mfa.service.ts, replaces 3 construction sites. All tests pass.",
+      "files": [
+        "apps/server/src/modules/oauth/oauth.service.ts",
+        "apps/server/src/modules/client/client.service.ts",
+        "apps/server/src/modules/mfa/mfa.service.ts",
+        "docs/AUDIT_REPORT.md"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "POST /api/users bypasses the entire registration flow and any authenticated user can create accounts. remove it per REDUNDANT-5",
+      "expected_output": "Removes POST route from user.routes.ts. Updates or removes related tests. Verifies no frontend code depends on this endpoint. Barrel exports updated if needed.",
+      "files": ["apps/server/src/modules/user/user.routes.ts", "docs/AUDIT_REPORT.md"]
+    }
+  ]
+}

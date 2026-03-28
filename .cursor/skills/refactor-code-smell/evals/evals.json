@@ -1,0 +1,27 @@
+{
+  "skill_name": "refactor-code-smell",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "SMELL-1 is a critical issue — the cookie secret defaults to 'change-me-in-production'. fix the env validation so production deployments can't start with a weak secret",
+      "expected_output": "Updates COOKIE_SECRET in env.ts to reject the default value in production via a Zod refine. Updates .env.example. Adds unit test for the env schema validation.",
+      "files": ["apps/server/src/core/env.ts", "docs/AUDIT_REPORT.md"]
+    },
+    {
+      "id": 2,
+      "prompt": "fix SMELL-4 — we're storing a plaintext refresh token in the rotationGracePlaintext column. it should be hashed like every other token",
+      "expected_output": "Stores SHA-256 hash instead of plaintext in rotationGracePlaintext. Updates grace-period comparison to hash incoming token first. Adds test verifying DB never contains raw token.",
+      "files": ["apps/server/src/modules/token/refresh-token.service.ts", "docs/AUDIT_REPORT.md"]
+    },
+    {
+      "id": 3,
+      "prompt": "the account session list is showing expired sessions to users (SMELL-9) and the admin search has ilike pattern injection (SMELL-10). fix both",
+      "expected_output": "Adds gt(sessions.expiresAt, new Date()) filter to listSessions. Adds escapeLikePattern helper for admin search. Tests for both: expired session filtering and wildcard character escaping.",
+      "files": [
+        "apps/server/src/modules/account/account.service.ts",
+        "apps/server/src/modules/admin/admin.service.ts",
+        "docs/AUDIT_REPORT.md"
+      ]
+    }
+  ]
+}

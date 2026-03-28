@@ -1,0 +1,27 @@
+{
+  "skill_name": "fix-bug",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "fix BUG-1 from the audit report — the forgot-password endpoint is leaking the reset token in the response body",
+      "expected_output": "Removes resetToken from the POST /auth/forgot-password response. Updates the response schema. Adds a regression test verifying no token in response. Response is identical for existing and non-existing emails.",
+      "files": ["apps/server/src/modules/auth/auth.routes.ts", "docs/AUDIT_REPORT.md"]
+    },
+    {
+      "id": 2,
+      "prompt": "the event bus subscribe wrapper is broken — BUG-4 says handlers get undefined instead of the actual event. can you fix it and add a test?",
+      "expected_output": "Fixes the subscribe wrapper in event-bus.ts to pass the event directly instead of destructuring { data }. Removes EmitteryEvent interface. Adds integration test that publishes an event and verifies the subscriber receives the correct payload.",
+      "files": ["apps/server/src/infra/event-bus.ts", "docs/AUDIT_REPORT.md"]
+    },
+    {
+      "id": 3,
+      "prompt": "address BUG-5 and BUG-6 together — password reset needs to be atomic and the login throttling shouldn't hold connections open with setTimeout",
+      "expected_output": "Wraps password reset steps in db.transaction(). Replaces setTimeout delay with immediate 429 response and Retry-After header. Creates TooManyRequestsError if needed. Adds tests for both fixes.",
+      "files": [
+        "apps/server/src/modules/auth/password-reset.service.ts",
+        "apps/server/src/modules/auth/auth.service.ts",
+        "docs/AUDIT_REPORT.md"
+      ]
+    }
+  ]
+}
