@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { UserFilters } from '@/components/users/user-filters';
 import { UserTable } from '@/components/users/user-table';
 import type { PaginatedResponse } from '@/lib/api-client';
-import { serverFetch } from '@/lib/api-client';
+import { serverFetch } from '@/lib/api-client.server';
 import type { AdminUser } from '@/types/admin';
 
 interface UsersPageProps {

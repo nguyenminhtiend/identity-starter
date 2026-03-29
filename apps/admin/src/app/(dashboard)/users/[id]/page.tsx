@@ -1,7 +1,7 @@
 import { ChevronLeft } from 'lucide-react';
 import Link from 'next/link';
 import { UserDetail } from '@/components/users/user-detail';
-import { serverFetch } from '@/lib/api-client';
+import { serverFetch } from '@/lib/api-client.server';
 import type { AdminUserDetail, Role } from '@/types/admin';
 
 interface UserDetailPageProps {

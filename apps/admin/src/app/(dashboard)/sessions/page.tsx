@@ -3,7 +3,7 @@ import { SessionTable } from '@/components/sessions/session-table';
 import { Pagination } from '@/components/shared/pagination';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { PaginatedResponse } from '@/lib/api-client';
-import { serverFetch } from '@/lib/api-client';
+import { serverFetch } from '@/lib/api-client.server';
 import type { AdminSession } from '@/types/admin';
 
 interface SessionsPageProps {

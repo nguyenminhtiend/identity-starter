@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { AdminSidebar } from '@/components/layout/admin-sidebar';
-import { serverFetch } from '@/lib/api-client';
+import { serverFetch } from '@/lib/api-client.server';
 import type { AdminProfile } from '@/types/admin';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {

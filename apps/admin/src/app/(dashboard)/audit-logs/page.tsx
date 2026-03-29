@@ -6,7 +6,7 @@ import { Pagination } from '@/components/shared/pagination';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { PaginatedResponse } from '@/lib/api-client';
-import { serverFetch } from '@/lib/api-client';
+import { serverFetch } from '@/lib/api-client.server';
 import type { AuditLogEntry, ChainVerification } from '@/types/admin';
 
 interface AuditLogsPageProps {
