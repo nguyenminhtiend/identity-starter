@@ -34,7 +34,7 @@ async function latestUnusedResetTokenForEmail(email: string): Promise<string> {
 }
 
 describe('POST /api/auth/forgot-password', () => {
-  it('returns 200 with message only when user exists (token not in body)', async () => {
+  it('returns 200 with message and includes resetToken in non-production mode', async () => {
     const input = makeRegisterInput();
     await app.inject({ method: 'POST', url: '/api/auth/register', payload: input });
 
@@ -47,9 +47,10 @@ describe('POST /api/auth/forgot-password', () => {
     expect(response.statusCode).toBe(200);
     const body = response.json();
     expect(body.message).toBeDefined();
-    expect(body).not.toHaveProperty('resetToken');
-    const token = await latestUnusedResetTokenForEmail(input.email);
-    expect(token.length).toBeGreaterThan(0);
+    expect(body.resetToken).toBeDefined();
+    expect(typeof body.resetToken).toBe('string');
+    const dbToken = await latestUnusedResetTokenForEmail(input.email);
+    expect(body.resetToken).toBe(dbToken);
   });
 
   it('returns 200 without resetToken when email is unknown', async () => {

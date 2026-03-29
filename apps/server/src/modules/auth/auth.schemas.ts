@@ -34,6 +34,10 @@ export const authResponseSchema = z.object({
   }),
 });
 
+export const registerResponseSchema = authResponseSchema.extend({
+  verificationToken: z.string().optional(),
+});
+
 export interface AuthResponse {
   token: string;
   user: {

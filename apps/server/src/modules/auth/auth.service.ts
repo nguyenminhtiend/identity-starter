@@ -34,11 +34,15 @@ function toAuthResponse(row: SafeRowResult, token: string): AuthResponse {
   };
 }
 
+export interface RegisterResult extends AuthResponse {
+  verificationToken: string;
+}
+
 export async function register(
   db: Database,
   eventBus: EventBus,
   input: RegisterInput,
-): Promise<AuthResponse> {
+): Promise<RegisterResult> {
   const passwordHash = await hashPassword(input.password);
 
   let userRow: SafeRowResult;
@@ -60,11 +64,11 @@ export async function register(
 
   const session = await createSession(db, eventBus, { userId: userRow.id });
 
-  await generateVerificationToken(db, userRow.id);
+  const verificationToken = await generateVerificationToken(db, userRow.id);
 
   await eventBus.publish(createDomainEvent(AUTH_EVENTS.REGISTERED, { userId: userRow.id }));
 
-  return toAuthResponse(userRow, session.token);
+  return { ...toAuthResponse(userRow, session.token), verificationToken };
 }
 
 const MFA_CHALLENGE_TTL_MS = 5 * 60 * 1000;

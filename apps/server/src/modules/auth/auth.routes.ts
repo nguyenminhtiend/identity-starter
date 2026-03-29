@@ -6,10 +6,10 @@ import {
   setSessionCookie,
 } from '../../core/plugins/auth.js';
 import {
-  authResponseSchema,
   changePasswordSchema,
   loginResponseSchema,
   loginSchema,
+  registerResponseSchema,
   registerSchema,
 } from './auth.schemas.js';
 import { createAuthService } from './auth.service.js';
@@ -39,14 +39,19 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     {
       schema: {
         body: registerSchema,
-        response: { 201: authResponseSchema },
+        response: { 201: registerResponseSchema },
       },
       config: { rateLimit: { max: 5, timeWindow: '15 minutes' } },
     },
     async (request, reply) => {
       const result = await authService.register(request.body);
       setSessionCookie(reply, result.token, env.SESSION_TTL_SECONDS, getSessionCookieName(request));
-      return reply.status(201).send(result);
+      const { verificationToken, ...response } = result;
+      const body =
+        env.NODE_ENV !== 'production' && verificationToken
+          ? { ...response, verificationToken }
+          : response;
+      return reply.status(201).send(body);
     },
   );
 
@@ -138,10 +143,14 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       if (token !== null && env.NODE_ENV === 'development') {
         request.log.debug({ resetToken: token }, 'password reset token (dev only)');
       }
-      return reply.status(200).send({
+      const body: { message: string; resetToken?: string } = {
         message:
           'If an account exists for this email, you will receive password reset instructions.',
-      });
+      };
+      if (token !== null && env.NODE_ENV !== 'production') {
+        body.resetToken = token;
+      }
+      return reply.status(200).send(body);
     },
   );
 

@@ -487,7 +487,7 @@ describe('auth routes', () => {
   });
 
   describe('POST /api/auth/forgot-password', () => {
-    it('returns 200 with message only (no reset token in body)', async () => {
+    it('returns 200 with message and includes resetToken in non-production mode', async () => {
       mockRequestPasswordReset.mockResolvedValue('reset-token-value');
 
       const response = await app.inject({
@@ -499,7 +499,7 @@ describe('auth routes', () => {
       expect(response.statusCode).toBe(200);
       const body = response.json();
       expect(body.message).toBeDefined();
-      expect(body).not.toHaveProperty('resetToken');
+      expect(body.resetToken).toBe('reset-token-value');
       expect(mockRequestPasswordReset.mock.calls[0][0]).toBe('user@example.com');
     });
 
