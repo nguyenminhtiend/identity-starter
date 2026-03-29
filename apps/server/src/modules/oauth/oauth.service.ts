@@ -243,6 +243,21 @@ async function authorize(
   assertRedirectUri(client, query.redirect_uri);
   assertRequestedScope(client, query.scope);
 
+  if (client.isFirstParty) {
+    const { redirectUri } = await issueAuthorizationCode(deps, {
+      userId,
+      client,
+      redirectUri: query.redirect_uri,
+      scope: query.scope,
+      codeChallenge: query.code_challenge,
+      codeChallengeMethod: query.code_challenge_method,
+      nonce: query.nonce,
+      state: query.state,
+    });
+
+    return { type: 'redirect', redirectUri };
+  }
+
   const merged = await loadMergedConsentScopes(deps.db, userId, client.id);
   if (!consentCovers(merged, query.scope)) {
     return {

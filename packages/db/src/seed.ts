@@ -2,6 +2,7 @@ import { hash } from '@node-rs/argon2';
 import { and, eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import { oauthClients } from './schema/oauth-client.js';
 import { permissions } from './schema/permission.js';
 import { roles } from './schema/role.js';
 import { rolePermissions } from './schema/role-permission.js';
@@ -146,6 +147,47 @@ if (adminUser) {
   log(`  Created: ${ADMIN_EMAIL} (super_admin + admin)`);
 } else {
   log(`  Already exists: ${ADMIN_EMAIL}, skipping`);
+}
+
+// ---------------------------------------------------------------------------
+// Seed admin dashboard OAuth client (first-party)
+// ---------------------------------------------------------------------------
+
+const ADMIN_CLIENT_ID = 'admin-dashboard';
+const ADMIN_CLIENT_SECRET = 'admin-dashboard-dev-secret';
+
+log('Seeding admin dashboard OAuth client…');
+const clientSecretHash = await hash(ADMIN_CLIENT_SECRET, {
+  algorithm: 2,
+  memoryCost: 65536,
+  timeCost: 3,
+  outputLen: 32,
+  parallelism: 1,
+});
+
+const [adminClient] = await db
+  .insert(oauthClients)
+  .values({
+    clientId: ADMIN_CLIENT_ID,
+    clientSecretHash: clientSecretHash,
+    clientName: 'Admin Dashboard',
+    redirectUris: ['http://localhost:3002/auth/callback'],
+    grantTypes: ['authorization_code', 'refresh_token'],
+    responseTypes: ['code'],
+    scope: 'openid profile email',
+    tokenEndpointAuthMethod: 'client_secret_basic',
+    isConfidential: true,
+    isFirstParty: true,
+    applicationType: 'web',
+  })
+  .onConflictDoNothing()
+  .returning({ clientId: oauthClients.clientId });
+
+if (adminClient) {
+  log(`  Created OAuth client: ${ADMIN_CLIENT_ID} (first-party)`);
+  log(`  Client secret (dev only): ${ADMIN_CLIENT_SECRET}`);
+} else {
+  log(`  Already exists: ${ADMIN_CLIENT_ID}, skipping`);
 }
 
 await client.end();

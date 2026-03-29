@@ -92,6 +92,22 @@ describe('createClientSchema', () => {
     ).toBe(true);
   });
 
+  it('defaults isFirstParty to false when omitted', () => {
+    const result = createClientSchema.safeParse(validCreate);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.isFirstParty).toBe(false);
+    }
+  });
+
+  it('accepts isFirstParty: true', () => {
+    const result = createClientSchema.safeParse({ ...validCreate, isFirstParty: true });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.isFirstParty).toBe(true);
+    }
+  });
+
   it('rejects non-boolean isConfidential', () => {
     const result = createClientSchema.safeParse({
       ...validCreate,
@@ -152,6 +168,7 @@ describe('clientResponseSchema', () => {
     scope: 'openid',
     tokenEndpointAuthMethod: 'client_secret_basic',
     isConfidential: true,
+    isFirstParty: false,
     logoUri: null,
     tosUri: null,
     policyUri: null,
@@ -203,6 +220,7 @@ describe('clientListResponseSchema', () => {
     scope: 'openid',
     tokenEndpointAuthMethod: 'none',
     isConfidential: false,
+    isFirstParty: false,
     logoUri: null,
     tosUri: null,
     policyUri: null,
@@ -233,6 +251,7 @@ describe('clientWithSecretResponseSchema', () => {
     scope: 'openid',
     tokenEndpointAuthMethod: 'client_secret_basic',
     isConfidential: true,
+    isFirstParty: false,
     logoUri: null,
     tosUri: null,
     policyUri: null,

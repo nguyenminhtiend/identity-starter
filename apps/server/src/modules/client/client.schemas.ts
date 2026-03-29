@@ -17,6 +17,7 @@ const clientWritableFields = z.object({
   scope: z.string().min(1),
   tokenEndpointAuthMethod: tokenEndpointAuthMethodEnum,
   isConfidential: z.boolean(),
+  isFirstParty: z.boolean().optional().default(false),
 });
 
 export const createClientSchema = clientWritableFields;
@@ -38,6 +39,7 @@ export const clientResponseSchema = z.object({
   scope: z.string(),
   tokenEndpointAuthMethod: tokenEndpointAuthMethodEnum,
   isConfidential: z.boolean(),
+  isFirstParty: z.boolean(),
   logoUri: z.url().nullable(),
   tosUri: z.url().nullable(),
   policyUri: z.url().nullable(),

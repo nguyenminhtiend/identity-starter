@@ -54,6 +54,7 @@ function baseClient(overrides: Partial<ClientResponse> = {}): ClientResponse {
     scope: 'openid profile email',
     tokenEndpointAuthMethod: 'client_secret_basic',
     isConfidential: true,
+    isFirstParty: false,
     logoUri: null,
     tosUri: null,
     policyUri: null,
@@ -191,6 +192,41 @@ describe('oauth.service', () => {
       }
 
       expect(insert).toHaveBeenCalled();
+      expect(publishSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ eventName: OAUTH_EVENTS.AUTHORIZATION_CODE_ISSUED }),
+      );
+    });
+
+    it('auto-approves consent for first-party clients and issues auth code', async () => {
+      mocks.getClientByClientId.mockResolvedValue(baseClient({ isFirstParty: true }));
+
+      const insertValues = vi.fn().mockResolvedValue(undefined);
+      const insert = vi.fn().mockReturnValue({ values: insertValues });
+
+      const db = {
+        insert,
+        select: vi.fn(),
+      } as never;
+
+      const publishSpy = vi.spyOn(eventBus, 'publish');
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
+
+      const query = buildAuthorizeQuery({ client_id: PUBLIC_CLIENT_ID });
+      const result = await service.authorize(USER_ID, query);
+
+      expect(result.type).toBe('redirect');
+      if (result.type === 'redirect') {
+        const url = new URL(result.redirectUri);
+        expect(url.searchParams.get('code')).toBeTruthy();
+      }
+
+      expect(db.select).not.toHaveBeenCalled();
       expect(publishSpy).toHaveBeenCalledWith(
         expect.objectContaining({ eventName: OAUTH_EVENTS.AUTHORIZATION_CODE_ISSUED }),
       );
@@ -494,6 +530,7 @@ describe('oauth.service', () => {
         scope: 'openid profile email',
         tokenEndpointAuthMethod: 'client_secret_basic',
         isConfidential: true,
+        isFirstParty: false,
         logoUri: null,
         tosUri: null,
         policyUri: null,

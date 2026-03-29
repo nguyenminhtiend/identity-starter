@@ -14,13 +14,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
     );
     profile = { ...basicProfile, roles: detail.roles };
   } catch {
-    redirect('/login');
+    redirect('/auth/login');
   }
 
   const isAdmin = profile.roles.some((r) => r.name === 'admin' || r.name === 'super_admin');
 
   if (!isAdmin) {
-    redirect('/login');
+    redirect('/auth/login');
   }
 
   return (

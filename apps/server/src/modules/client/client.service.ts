@@ -30,6 +30,7 @@ export function mapToClientResponse(row: SafeRowResult): ClientResponse {
     tokenEndpointAuthMethod:
       row.tokenEndpointAuthMethod as ClientResponse['tokenEndpointAuthMethod'],
     isConfidential: row.isConfidential,
+    isFirstParty: row.isFirstParty,
     logoUri: row.logoUri ?? null,
     tosUri: row.tosUri ?? null,
     policyUri: row.policyUri ?? null,
@@ -64,6 +65,7 @@ export async function createClient(
         scope: input.scope,
         tokenEndpointAuthMethod: input.tokenEndpointAuthMethod,
         isConfidential: input.isConfidential,
+        isFirstParty: input.isFirstParty ?? false,
         logoUri: null,
         tosUri: null,
         policyUri: null,
@@ -139,6 +141,9 @@ export async function updateClient(
   }
   if (input.isConfidential !== undefined) {
     patch.isConfidential = input.isConfidential;
+  }
+  if (input.isFirstParty !== undefined) {
+    patch.isFirstParty = input.isFirstParty;
   }
 
   if (Object.keys(patch).length === 0) {

@@ -43,7 +43,6 @@ export async function serverFetch<T>(path: string, init?: RequestInit): Promise<
     headers: {
       ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
       ...(session ? { Authorization: `Bearer ${session.value}` } : {}),
-      'x-session-cookie': cookieName,
       ...init?.headers,
     },
     cache: 'no-store',

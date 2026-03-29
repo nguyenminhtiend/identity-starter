@@ -41,6 +41,7 @@ function sampleClient(overrides: Record<string, unknown> = {}) {
     scope: 'openid profile',
     tokenEndpointAuthMethod: 'client_secret_basic' as const,
     isConfidential: true,
+    isFirstParty: false,
     logoUri: null,
     tosUri: null,
     policyUri: null,

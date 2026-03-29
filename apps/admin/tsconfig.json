@@ -23,7 +23,7 @@
       "@/components/shared/*": ["../../packages/ui/src/components/shared/*"],
       "@/components/providers": ["../../packages/ui/src/components/providers"],
       "@/lib/utils": ["../../packages/ui/src/lib/utils"],
-      "@/lib/api-client": ["../../packages/ui/src/lib/api-client"],
+      "@/lib/api-client": ["./src/lib/api-client"],
       "@/*": ["./src/*"]
     }
   },

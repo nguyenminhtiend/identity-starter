@@ -1,0 +1,1 @@
+ALTER TABLE "oauth_clients" ADD COLUMN "is_first_party" boolean DEFAULT false NOT NULL;

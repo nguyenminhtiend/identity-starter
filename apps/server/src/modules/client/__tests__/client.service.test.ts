@@ -37,6 +37,7 @@ function oauthClientRow(overrides: Record<string, unknown> = {}) {
     scope: 'openid',
     tokenEndpointAuthMethod: 'client_secret_basic',
     isConfidential: true,
+    isFirstParty: false,
     logoUri: null,
     tosUri: null,
     policyUri: null,

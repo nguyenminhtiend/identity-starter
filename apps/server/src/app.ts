@@ -50,7 +50,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   await app.register(containerPlugin, { container: options.container });
   await app.register(errorHandlerPlugin);
 
-  await app.register(authPlugin, { validateSession });
+  await app.register(authPlugin, { validateSession, jwtIssuer: env.JWT_ISSUER });
   await app.register(adminPlugin);
   await app.register(rbacPlugin);
 

@@ -3,9 +3,10 @@ import type { Database } from '@identity-starter/db';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 
-const DEFAULT_COOKIE_NAME = 'session';
+import { verifyAccessToken } from '../../modules/token/jwt.service.js';
+import { createSigningKeyService } from '../../modules/token/signing-key.service.js';
 
-const VALID_COOKIE_NAMES = new Set([DEFAULT_COOKIE_NAME, 'admin_session']);
+const DEFAULT_COOKIE_NAME = 'session';
 
 export interface SessionLike {
   id: string;
@@ -16,6 +17,7 @@ export type ValidateSessionFn = (db: Database, token: string) => Promise<Session
 
 export interface AuthPluginOptions {
   validateSession: ValidateSessionFn;
+  jwtIssuer?: string;
 }
 
 declare module 'fastify' {
@@ -29,16 +31,19 @@ declare module 'fastify' {
   }
 }
 
-export function getSessionCookieName(request: FastifyRequest): string {
-  const header = request.headers['x-session-cookie'];
-  if (typeof header === 'string' && VALID_COOKIE_NAMES.has(header)) {
-    return header;
-  }
+function looksLikeJwt(token: string): boolean {
+  const parts = token.split('.');
+  return parts.length === 3 && parts.every((p) => p.length > 0);
+}
+
+export function getSessionCookieName(_request: FastifyRequest): string {
   return DEFAULT_COOKIE_NAME;
 }
 
 export const authPlugin = fp(async (fastify, opts: AuthPluginOptions) => {
   const { db } = fastify.container;
+  const signingKeyService = createSigningKeyService({ db });
+  const jwtIssuer = opts.jwtIssuer;
 
   fastify.decorateRequest('session', null as unknown as SessionLike);
   fastify.decorateRequest('userId', '');
@@ -59,6 +64,22 @@ export const authPlugin = fp(async (fastify, opts: AuthPluginOptions) => {
 
     if (!rawToken) {
       throw new UnauthorizedError('Missing or invalid authentication credentials');
+    }
+
+    if (jwtIssuer && looksLikeJwt(rawToken)) {
+      const jwks = await signingKeyService.getJwks();
+      const { createLocalJWKSet } = await import('jose');
+      const localJwks = createLocalJWKSet(jwks);
+      const result = await verifyAccessToken(localJwks, rawToken, jwtIssuer);
+
+      if (result) {
+        const sub = result.payload.sub;
+        if (typeof sub === 'string' && sub !== '') {
+          request.session = { id: `jwt:${result.payload.jti ?? sub}`, userId: sub };
+          request.userId = sub;
+          return;
+        }
+      }
     }
 
     const session = await opts.validateSession(db, rawToken);

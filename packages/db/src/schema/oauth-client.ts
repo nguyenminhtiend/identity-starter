@@ -16,6 +16,7 @@ export const oauthClients = pgTable('oauth_clients', {
   logoUri: text('logo_uri'),
   tosUri: text('tos_uri'),
   policyUri: text('policy_uri'),
+  isFirstParty: boolean('is_first_party').notNull().default(false),
   applicationType: text('application_type', { enum: ['web', 'native'] })
     .notNull()
     .default('web'),

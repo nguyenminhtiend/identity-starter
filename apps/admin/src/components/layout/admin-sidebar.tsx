@@ -3,7 +3,6 @@
 import { FileText, LogOut, Monitor, ShieldCheck, Users } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { clientFetch } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 
 const navItems = [
@@ -23,8 +22,8 @@ export function AdminSidebar({ displayName, email }: AdminSidebarProps) {
   const router = useRouter();
 
   async function handleLogout() {
-    await clientFetch('/api/auth/logout', { method: 'POST' });
-    router.push('/login');
+    await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    router.push('/auth/login');
     router.refresh();
   }
 
