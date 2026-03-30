@@ -25,7 +25,7 @@ describe('authorizeQuerySchema', () => {
   it('accepts valid query with required PKCE fields', () => {
     const result = authorizeQuerySchema.safeParse(valid);
     expect(result.success).toBe(true);
-    if (result.success) {
+    if (result.success && !('request_uri' in result.data)) {
       expect(result.data.redirect_uri).toBe('myapp://callback');
       expect(result.data.nonce).toBeUndefined();
     }
@@ -34,7 +34,7 @@ describe('authorizeQuerySchema', () => {
   it('accepts optional nonce', () => {
     const result = authorizeQuerySchema.safeParse({ ...valid, nonce: 'n-1' });
     expect(result.success).toBe(true);
-    if (result.success) {
+    if (result.success && !('request_uri' in result.data)) {
       expect(result.data.nonce).toBe('n-1');
     }
   });

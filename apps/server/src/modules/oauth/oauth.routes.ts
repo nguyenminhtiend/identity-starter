@@ -129,7 +129,7 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
     async (request, reply) => {
       const q = request.query;
       const result =
-        'request_uri' in q && q.request_uri !== ''
+        'request_uri' in q
           ? await oauthService.authorizeWithPar(request.userId, q.request_uri, q.client_id)
           : await oauthService.authorize(request.userId, q);
       if (result.type === 'redirect') {
