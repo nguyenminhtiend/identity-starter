@@ -8,21 +8,25 @@ export const OAUTH_EVENTS = {
 export interface AuthorizationCodeIssuedPayload {
   userId: string;
   clientId: string;
+  clientInternalId: string;
 }
 
 export interface TokenExchangedPayload {
   userId: string;
   clientId: string;
+  clientInternalId: string;
   grantType: string;
 }
 
 export interface ConsentGrantedPayload {
   userId: string;
   clientId: string;
+  clientInternalId: string;
   scope: string;
 }
 
 export interface ConsentRevokedPayload {
   userId: string;
   clientId: string;
+  clientInternalId: string;
 }

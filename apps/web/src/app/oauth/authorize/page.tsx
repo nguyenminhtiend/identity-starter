@@ -7,7 +7,9 @@ interface AuthorizePageProps {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-async function fetchConsentData(queryString: string): Promise<ConsentRequired> {
+async function fetchConsentData(
+  queryString: string,
+): Promise<ConsentRequired | { type: 'redirect'; location: string }> {
   const cookieStore = await cookies();
   const session = cookieStore.get('session');
   const apiUrl = process.env.API_URL ?? 'http://localhost:3001';
@@ -20,7 +22,7 @@ async function fetchConsentData(queryString: string): Promise<ConsentRequired> {
   if (response.status >= 300 && response.status < 400) {
     const location = response.headers.get('location');
     if (location) {
-      redirect(location);
+      return { type: 'redirect', location };
     }
     throw new Error('Redirect with no location');
   }
@@ -51,7 +53,7 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
     redirect(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
   }
 
-  let response: ConsentRequired;
+  let response: ConsentRequired | { type: 'redirect'; location: string };
   try {
     response = await fetchConsentData(queryString);
   } catch (err) {
@@ -61,6 +63,10 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
         <p className="text-destructive">{message}</p>
       </div>
     );
+  }
+
+  if (response.type === 'redirect') {
+    redirect(response.location);
   }
 
   if (response.type !== 'consent_required') {

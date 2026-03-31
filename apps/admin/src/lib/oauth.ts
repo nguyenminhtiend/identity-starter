@@ -72,7 +72,7 @@ export function buildAuthorizeUrl(state: string, codeChallenge: string): string 
     code_challenge_method: 'S256',
     state,
   });
-  return `${OAUTH_CONFIG.apiUrl}/oauth/authorize?${params.toString()}`;
+  return `${OAUTH_CONFIG.issuer}/oauth/authorize?${params.toString()}`;
 }
 
 export { PKCE_COOKIE_NAME };

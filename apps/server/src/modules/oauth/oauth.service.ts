@@ -214,6 +214,7 @@ async function issueAuthorizationCode(
     createDomainEvent(OAUTH_EVENTS.AUTHORIZATION_CODE_ISSUED, {
       userId: params.userId,
       clientId: params.client.clientId,
+      clientInternalId: params.client.id,
     }),
   );
 
@@ -374,6 +375,7 @@ async function submitConsent(
     createDomainEvent(OAUTH_EVENTS.CONSENT_GRANTED, {
       userId,
       clientId: client.clientId,
+      clientInternalId: client.id,
       scope: input.scope,
     }),
   );
@@ -433,6 +435,7 @@ async function revokeConsent(
     createDomainEvent(OAUTH_EVENTS.CONSENT_REVOKED, {
       userId,
       clientId: client.clientId,
+      clientInternalId: client.id,
     }),
   );
 }
@@ -608,6 +611,7 @@ async function exchangeAuthorizationCode(
     createDomainEvent(OAUTH_EVENTS.TOKEN_EXCHANGED, {
       userId: result.row.userId,
       clientId: result.client.clientId,
+      clientInternalId: result.client.id,
       grantType: 'authorization_code',
     }),
   );
@@ -665,6 +669,7 @@ async function exchangeClientCredentials(
     createDomainEvent(OAUTH_EVENTS.TOKEN_EXCHANGED, {
       userId: authenticatedClient.clientId,
       clientId: authenticatedClient.clientId,
+      clientInternalId: authenticatedClient.id,
       grantType: 'client_credentials',
     }),
   );
@@ -743,6 +748,7 @@ async function exchangeRefreshToken(
     createDomainEvent(OAUTH_EVENTS.TOKEN_EXCHANGED, {
       userId: newRow.userId,
       clientId: client.clientId,
+      clientInternalId: client.id,
       grantType: 'refresh_token',
     }),
   );
