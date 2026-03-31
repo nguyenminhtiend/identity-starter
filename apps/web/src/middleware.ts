@@ -1,16 +1,16 @@
 import { type NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = [
-  '/login',
-  '/register',
-  '/forgot-password',
-  '/reset-password',
-  '/verify-email',
-];
+const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/reset-password'];
+
+const HYBRID_PATHS = ['/verify-email'];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const session = request.cookies.get('session');
+
+  if (HYBRID_PATHS.some((p) => pathname.startsWith(p))) {
+    return NextResponse.next();
+  }
 
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     if (session) {
