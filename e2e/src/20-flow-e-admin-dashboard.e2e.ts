@@ -42,13 +42,13 @@ describe('Flow E: Admin Dashboard', () => {
       tokenEndpointAuthMethod: 'client_secret_basic',
       isConfidential: true,
     };
-    const res = await flow.step<{ clientId: string; clientSecret: string }>(
+    const res = await flow.step<{ id: string; clientId: string; clientSecret: string }>(
       'Create OAuth client',
       () => api.post('/api/admin/clients', { body, token: adminToken }),
       { method: 'POST', path: '/api/admin/clients', body },
     );
     expect(res.status).toBe(201);
-    clientId = res.data.clientId;
+    clientId = res.data.id;
   });
 
   it('step 3: list clients', async () => {

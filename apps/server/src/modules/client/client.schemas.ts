@@ -12,7 +12,7 @@ const clientStatusEnum = z.enum(['active', 'suspended']);
 
 const clientWritableFields = z.object({
   clientName: z.string().min(1).max(255),
-  redirectUris: z.array(z.url()).min(1),
+  redirectUris: z.array(z.url()),
   grantTypes: z.array(grantTypeEnum),
   scope: z.string().min(1),
   tokenEndpointAuthMethod: tokenEndpointAuthMethodEnum,

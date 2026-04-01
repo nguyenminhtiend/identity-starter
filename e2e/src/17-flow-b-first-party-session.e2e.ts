@@ -95,7 +95,7 @@ describe('Flow B: First-Party Web App (Direct Session Auth)', () => {
       { method: 'GET', path: '/api/account/sessions' },
     );
     expect(res.status).toBe(200);
-    expect(res.data.data.length).toBeGreaterThanOrEqual(1);
+    expect(res.data.length).toBeGreaterThanOrEqual(1);
   });
 
   // --- MFA ENROLLMENT ---
