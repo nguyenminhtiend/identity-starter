@@ -139,7 +139,7 @@ describe('Flow A: Third-Party Web App (OAuth 2.1)', () => {
       { method: 'POST', path: '/oauth/consent', body },
     );
     expect(res.status).toBe(302);
-    const location = res.headers.get('location');
+    const location = res.headers.get('location') ?? '';
     expect(location).toContain('thirdparty.example.com/callback');
     expect(location).toContain(`state=${state}`);
     authorizationCode = codeFromLocation(location);
