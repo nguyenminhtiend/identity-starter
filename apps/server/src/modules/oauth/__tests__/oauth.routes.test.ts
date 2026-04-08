@@ -8,7 +8,6 @@ import { errorHandlerPlugin } from '../../../core/plugins/error-handler.js';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
 import { makeSession } from '../../session/__tests__/session.factory.js';
 import {
-  buildAuthorizeQuery,
   buildConsentApprove,
   buildTokenRequestAuthCode,
   buildTokenRequestRefresh,
@@ -86,6 +85,16 @@ vi.mock('../../session/session.service.js', () => ({
   revokeSession: vi.fn().mockResolvedValue(undefined),
 }));
 
+const authPluginMocks = vi.hoisted(() => ({
+  clearSessionCookie: vi.fn(),
+  getSessionCookieName: vi.fn().mockReturnValue('session'),
+}));
+
+vi.mock('../../../core/plugins/auth.js', () => ({
+  clearSessionCookie: authPluginMocks.clearSessionCookie,
+  getSessionCookieName: authPluginMocks.getSessionCookieName,
+}));
+
 import { oauthRoutes } from '../oauth.routes.js';
 
 describe('oauth routes', () => {
@@ -142,60 +151,8 @@ describe('oauth routes', () => {
     mocks.getJwks.mockResolvedValue({ keys: [] });
   });
 
-  describe('GET /oauth/authorize', () => {
-    it('returns consent_required when authorize requires consent', async () => {
-      const query = buildAuthorizeQuery();
-      mocks.authorize.mockResolvedValue({
-        type: 'consent_required',
-        client: {
-          clientId: 'c1',
-          clientName: 'App',
-          scope: 'openid',
-          logoUri: null,
-          policyUri: null,
-          tosUri: null,
-        },
-        requestedScope: query.scope,
-        state: query.state,
-        redirectUri: query.redirect_uri,
-      });
-
-      const response = await app.inject({
-        method: 'GET',
-        url: '/oauth/authorize',
-        headers: sessionHeaders,
-        query,
-      });
-
-      expect(response.statusCode).toBe(200);
-      const body = JSON.parse(response.body);
-      expect(body.type).toBe('consent_required');
-      expect(body.client.clientId).toBe('c1');
-      expect(mocks.authorize).toHaveBeenCalledWith(
-        mockSession.userId,
-        expect.objectContaining(query),
-      );
-    });
-
-    it('redirects with code when authorize returns redirect', async () => {
-      const query = buildAuthorizeQuery();
-      mocks.authorize.mockResolvedValue({
-        type: 'redirect',
-        redirectUri: 'https://example.com/callback?code=abc&state=s',
-      });
-
-      const response = await app.inject({
-        method: 'GET',
-        url: '/oauth/authorize',
-        headers: sessionHeaders,
-        query,
-      });
-
-      expect(response.statusCode).toBe(302);
-      expect(response.headers.location).toBe('https://example.com/callback?code=abc&state=s');
-    });
-
-    it('uses authorizeWithPar when request_uri is present', async () => {
+  describe('GET /oauth/authorize (PAR-only)', () => {
+    it('redirects via authorizeWithPar when request_uri is present', async () => {
       const requestUri = 'urn:ietf:params:oauth:request_uri:xyz';
       const clientId = 'par-client';
       mocks.authorizeWithPar.mockResolvedValue({
@@ -212,7 +169,58 @@ describe('oauth routes', () => {
 
       expect(response.statusCode).toBe(302);
       expect(mocks.authorizeWithPar).toHaveBeenCalledWith(mockSession.userId, requestUri, clientId);
-      expect(mocks.authorize).not.toHaveBeenCalled();
+    });
+
+    it('returns consent_required via PAR when authorizeWithPar requires consent', async () => {
+      mocks.authorizeWithPar.mockResolvedValue({
+        type: 'consent_required',
+        client: {
+          clientId: 'c1',
+          clientName: 'App',
+          scope: 'openid',
+          logoUri: null,
+          policyUri: null,
+          tosUri: null,
+        },
+        requestedScope: 'openid',
+        state: 'st',
+        redirectUri: 'https://example.com/callback',
+      });
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/oauth/authorize',
+        headers: sessionHeaders,
+        query: {
+          request_uri: 'urn:ietf:params:oauth:request_uri:abc',
+          client_id: 'c1',
+        },
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      expect(body.type).toBe('consent_required');
+      expect(body.client.clientId).toBe('c1');
+    });
+
+    it('rejects non-PAR direct authorize queries with 400', async () => {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/oauth/authorize',
+        headers: sessionHeaders,
+        query: {
+          response_type: 'code',
+          client_id: 'cid',
+          redirect_uri: 'https://example.com/callback',
+          scope: 'openid',
+          state: 'st',
+          code_challenge: 'a'.repeat(43),
+          code_challenge_method: 'S256',
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(mocks.authorizeWithPar).not.toHaveBeenCalled();
     });
   });
 
@@ -283,57 +291,18 @@ describe('oauth routes', () => {
     });
   });
 
-  describe('POST /oauth/token', () => {
-    const tokenResponse = {
+  describe('POST /oauth/token (DPoP required)', () => {
+    const dpopTokenResponse = {
       access_token: 'at',
-      token_type: 'Bearer' as const,
+      token_type: 'DPoP' as const,
       expires_in: 3600,
       refresh_token: 'rt',
       scope: 'openid profile',
     };
 
-    it('returns 200 for authorization_code grant', async () => {
+    it('returns 400 when DPoP proof header is missing', async () => {
       const body = buildTokenRequestAuthCode();
       mocks.authenticateClient.mockResolvedValue(null);
-      mocks.exchangeToken.mockResolvedValue(tokenResponse);
-      const origin = 'http://localhost:3100';
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/oauth/token',
-        headers: { 'content-type': 'application/json', origin },
-        payload: body,
-      });
-
-      expect(response.statusCode).toBe(200);
-      expect(JSON.parse(response.body)).toMatchObject(tokenResponse);
-      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null, undefined);
-      expect(mocks.validateDpopProof).not.toHaveBeenCalled();
-      expect(response.headers['access-control-allow-origin']).toBe(origin);
-      expect(response.headers['access-control-allow-methods']).toBe('POST');
-      expect(response.headers['access-control-allow-credentials']).toBe('true');
-    });
-
-    it('does not set CORS headers for disallowed origins', async () => {
-      const body = buildTokenRequestAuthCode();
-      mocks.authenticateClient.mockResolvedValue(null);
-      mocks.exchangeToken.mockResolvedValue(tokenResponse);
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/oauth/token',
-        headers: { 'content-type': 'application/json', origin: 'https://evil.example' },
-        payload: body,
-      });
-
-      expect(response.statusCode).toBe(200);
-      expect(response.headers['access-control-allow-origin']).toBeUndefined();
-    });
-
-    it('returns 200 for refresh_token grant', async () => {
-      const body = buildTokenRequestRefresh();
-      mocks.authenticateClient.mockResolvedValue(null);
-      mocks.exchangeToken.mockResolvedValue(tokenResponse);
 
       const response = await app.inject({
         method: 'POST',
@@ -342,44 +311,69 @@ describe('oauth routes', () => {
         payload: body,
       });
 
-      expect(response.statusCode).toBe(200);
-      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null, undefined);
+      expect(response.statusCode).toBe(400);
+      expect(mocks.exchangeToken).not.toHaveBeenCalled();
       expect(mocks.validateDpopProof).not.toHaveBeenCalled();
     });
 
-    it('validates DPoP proof and passes jkt when DPoP header is present', async () => {
+    it('returns 200 for authorization_code grant with DPoP', async () => {
       const body = buildTokenRequestAuthCode();
       mocks.authenticateClient.mockResolvedValue(null);
-      mocks.validateDpopProof.mockResolvedValue({
-        jkt: 'test-thumbprint',
-        publicKey: {},
-      });
-      mocks.exchangeToken.mockResolvedValue({
-        access_token: 'at',
-        token_type: 'DPoP',
-        expires_in: 3600,
-        scope: 'openid',
-      });
+      mocks.validateDpopProof.mockResolvedValue({ jkt: 'test-jkt', publicKey: {} });
+      mocks.exchangeToken.mockResolvedValue(dpopTokenResponse);
+      const origin = 'http://localhost:3100';
 
       const response = await app.inject({
         method: 'POST',
         url: '/oauth/token',
-        headers: { 'content-type': 'application/json', dpop: 'dpop-proof-jwt' },
+        headers: { 'content-type': 'application/json', origin, dpop: 'dpop-proof' },
         payload: body,
       });
 
       expect(response.statusCode).toBe(200);
-      expect(JSON.parse(response.body)).toMatchObject({
-        access_token: 'at',
-        token_type: 'DPoP',
-        expires_in: 3600,
-        scope: 'openid',
-      });
-      expect(mocks.validateDpopProof).toHaveBeenCalledWith('dpop-proof-jwt', {
+      expect(JSON.parse(response.body)).toMatchObject(dpopTokenResponse);
+      expect(mocks.validateDpopProof).toHaveBeenCalledWith('dpop-proof', {
         htm: 'POST',
-        htu: 'http://localhost:3000/oauth/token',
+        htu: 'http://localhost:80/oauth/token',
       });
-      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null, 'test-thumbprint');
+      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null, 'test-jkt');
+      expect(response.headers['access-control-allow-origin']).toBe(origin);
+      expect(response.headers['access-control-allow-methods']).toBe('POST');
+      expect(response.headers['access-control-allow-credentials']).toBe('true');
+    });
+
+    it('does not set CORS headers for disallowed origins', async () => {
+      const body = buildTokenRequestAuthCode();
+      mocks.authenticateClient.mockResolvedValue(null);
+      mocks.validateDpopProof.mockResolvedValue({ jkt: 'test-jkt', publicKey: {} });
+      mocks.exchangeToken.mockResolvedValue(dpopTokenResponse);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/token',
+        headers: { 'content-type': 'application/json', origin: 'https://evil.example', dpop: 'p' },
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['access-control-allow-origin']).toBeUndefined();
+    });
+
+    it('returns 200 for refresh_token grant with DPoP', async () => {
+      const body = buildTokenRequestRefresh();
+      mocks.authenticateClient.mockResolvedValue(null);
+      mocks.validateDpopProof.mockResolvedValue({ jkt: 'bound-jkt', publicKey: {} });
+      mocks.exchangeToken.mockResolvedValue(dpopTokenResponse);
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/oauth/token',
+        headers: { 'content-type': 'application/json', dpop: 'refresh-dpop-proof' },
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null, 'bound-jkt');
     });
 
     it('returns 400 when DPoP proof is invalid', async () => {
@@ -398,32 +392,6 @@ describe('oauth routes', () => {
 
       expect(response.statusCode).toBe(400);
       expect(mocks.exchangeToken).not.toHaveBeenCalled();
-    });
-
-    it('passes DPoP jkt to exchangeToken on refresh_token grant', async () => {
-      const body = buildTokenRequestRefresh();
-      mocks.authenticateClient.mockResolvedValue(null);
-      mocks.validateDpopProof.mockResolvedValue({
-        jkt: 'bound-jkt',
-        publicKey: {},
-      });
-      mocks.exchangeToken.mockResolvedValue({
-        access_token: 'at2',
-        token_type: 'DPoP',
-        expires_in: 3600,
-        scope: 'openid',
-        refresh_token: 'rt2',
-      });
-
-      const response = await app.inject({
-        method: 'POST',
-        url: '/oauth/token',
-        headers: { 'content-type': 'application/json', dpop: 'refresh-dpop-proof' },
-        payload: body,
-      });
-
-      expect(response.statusCode).toBe(200);
-      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, null, 'bound-jkt');
     });
 
     it('authenticates with client_secret_basic via Authorization header', async () => {
@@ -449,7 +417,8 @@ describe('oauth routes', () => {
         updatedAt: new Date(),
       };
       mocks.authenticateClient.mockResolvedValue(authed);
-      mocks.exchangeToken.mockResolvedValue(tokenResponse);
+      mocks.validateDpopProof.mockResolvedValue({ jkt: 'basic-jkt', publicKey: {} });
+      mocks.exchangeToken.mockResolvedValue(dpopTokenResponse);
 
       const basic = Buffer.from('cid:secret').toString('base64');
       const response = await app.inject({
@@ -458,13 +427,14 @@ describe('oauth routes', () => {
         headers: {
           'content-type': 'application/json',
           authorization: `Basic ${basic}`,
+          dpop: 'dpop-proof',
         },
         payload: body,
       });
 
       expect(response.statusCode).toBe(200);
       expect(mocks.authenticateClient).toHaveBeenCalledWith(expect.anything(), 'cid', 'secret');
-      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, authed, undefined);
+      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, authed, 'basic-jkt');
     });
 
     it('authenticates with client_secret_post via body', async () => {
@@ -494,12 +464,13 @@ describe('oauth routes', () => {
         updatedAt: new Date(),
       };
       mocks.authenticateClient.mockResolvedValue(authed);
-      mocks.exchangeToken.mockResolvedValue(tokenResponse);
+      mocks.validateDpopProof.mockResolvedValue({ jkt: 'post-jkt', publicKey: {} });
+      mocks.exchangeToken.mockResolvedValue(dpopTokenResponse);
 
       const response = await app.inject({
         method: 'POST',
         url: '/oauth/token',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', dpop: 'dpop-proof' },
         payload: body,
       });
 
@@ -509,7 +480,7 @@ describe('oauth routes', () => {
         'post-cid',
         'post-secret',
       );
-      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, authed, undefined);
+      expect(mocks.exchangeToken).toHaveBeenCalledWith(body, authed, 'post-jkt');
     });
   });
 
@@ -548,9 +519,10 @@ describe('oauth routes', () => {
 
     it('returns 429 after exceeding per-client rate limit on token endpoint', async () => {
       mocks.authenticateClient.mockResolvedValue(null);
+      mocks.validateDpopProof.mockResolvedValue({ jkt: 'rl-jkt', publicKey: {} });
       mocks.exchangeToken.mockResolvedValue({
         access_token: 'at',
-        token_type: 'Bearer',
+        token_type: 'DPoP',
         expires_in: 3600,
         scope: 'openid',
       });
@@ -564,7 +536,7 @@ describe('oauth routes', () => {
         const res = await rateLimitApp.inject({
           method: 'POST',
           url: '/oauth/token',
-          headers: { 'content-type': 'application/json' },
+          headers: { 'content-type': 'application/json', dpop: 'proof' },
           payload: body,
         });
         expect(res.statusCode).toBe(200);
@@ -573,7 +545,7 @@ describe('oauth routes', () => {
       const response = await rateLimitApp.inject({
         method: 'POST',
         url: '/oauth/token',
-        headers: { 'content-type': 'application/json' },
+        headers: { 'content-type': 'application/json', dpop: 'proof' },
         payload: body,
       });
 

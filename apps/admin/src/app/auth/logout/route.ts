@@ -42,7 +42,7 @@ export async function POST() {
   if (idTokenHint) {
     endSessionParams.set('id_token_hint', idTokenHint);
   }
-  const endSessionUrl = `${OAUTH_CONFIG.issuer}/oauth/end-session?${endSessionParams.toString()}`;
+  const endSessionUrl = `${OAUTH_CONFIG.apiUrl}/oauth/end-session?${endSessionParams.toString()}`;
 
   return NextResponse.json({ endSessionUrl });
 }

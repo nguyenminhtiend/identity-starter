@@ -11,68 +11,8 @@ import {
 const codeChallenge = 'a'.repeat(43);
 const codeVerifier = 'b'.repeat(43);
 
-describe('authorizeQuerySchema', () => {
-  const valid = {
-    response_type: 'code' as const,
-    client_id: 'client-1',
-    redirect_uri: 'myapp://callback',
-    scope: 'openid profile',
-    state: 'csrf-token',
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256' as const,
-  };
-
-  it('accepts valid query with required PKCE fields', () => {
-    const result = authorizeQuerySchema.safeParse(valid);
-    expect(result.success).toBe(true);
-    if (result.success && !('request_uri' in result.data)) {
-      expect(result.data.redirect_uri).toBe('myapp://callback');
-      expect(result.data.nonce).toBeUndefined();
-    }
-  });
-
-  it('accepts optional nonce', () => {
-    const result = authorizeQuerySchema.safeParse({ ...valid, nonce: 'n-1' });
-    expect(result.success).toBe(true);
-    if (result.success && !('request_uri' in result.data)) {
-      expect(result.data.nonce).toBe('n-1');
-    }
-  });
-
-  it('rejects wrong response_type', () => {
-    const result = authorizeQuerySchema.safeParse({ ...valid, response_type: 'token' });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects empty client_id', () => {
-    const result = authorizeQuerySchema.safeParse({ ...valid, client_id: '' });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects code_challenge shorter than 43', () => {
-    const result = authorizeQuerySchema.safeParse({ ...valid, code_challenge: 'a'.repeat(42) });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects code_challenge longer than 128', () => {
-    const result = authorizeQuerySchema.safeParse({ ...valid, code_challenge: 'a'.repeat(129) });
-    expect(result.success).toBe(false);
-  });
-
-  it('rejects non-S256 code_challenge_method', () => {
-    const result = authorizeQuerySchema.safeParse({ ...valid, code_challenge_method: 'plain' });
-    expect(result.success).toBe(false);
-  });
-
-  it('strips unknown fields', () => {
-    const result = authorizeQuerySchema.safeParse({ ...valid, extra: 'x' });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data).not.toHaveProperty('extra');
-    }
-  });
-
-  it('accepts PAR authorize query with request_uri and client_id only', () => {
+describe('authorizeQuerySchema (PAR-only)', () => {
+  it('accepts PAR authorize query with request_uri and client_id', () => {
     const result = authorizeQuerySchema.safeParse({
       request_uri: 'urn:ietf:params:oauth:request_uri:abc',
       client_id: 'client-par',
@@ -92,6 +32,39 @@ describe('authorizeQuerySchema', () => {
       client_id: 'c',
     });
     expect(result.success).toBe(false);
+  });
+
+  it('rejects PAR query with empty client_id', () => {
+    const result = authorizeQuerySchema.safeParse({
+      request_uri: 'urn:ietf:params:oauth:request_uri:abc',
+      client_id: '',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects non-PAR direct authorize query', () => {
+    const result = authorizeQuerySchema.safeParse({
+      response_type: 'code',
+      client_id: 'client-1',
+      redirect_uri: 'myapp://callback',
+      scope: 'openid profile',
+      state: 'csrf-token',
+      code_challenge: codeChallenge,
+      code_challenge_method: 'S256',
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('strips unknown fields', () => {
+    const result = authorizeQuerySchema.safeParse({
+      request_uri: 'urn:ietf:params:oauth:request_uri:abc',
+      client_id: 'client-par',
+      extra: 'x',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).not.toHaveProperty('extra');
+    }
   });
 });
 

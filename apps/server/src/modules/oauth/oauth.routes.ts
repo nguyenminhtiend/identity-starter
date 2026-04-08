@@ -1,11 +1,12 @@
 import rateLimit from '@fastify/rate-limit';
-import { UnauthorizedError } from '@identity-starter/core';
+import { UnauthorizedError, ValidationError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 import * as jose from 'jose';
 
 import { env } from '../../core/env.js';
+import { clearSessionCookie, getSessionCookieName } from '../../core/plugins/auth.js';
 import type { ClientResponse } from '../client/client.schemas.js';
 import { authenticateClient } from '../client/client.service.js';
 import { revokeSession, validateSession } from '../session/session.service.js';
@@ -127,11 +128,11 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (request, reply) => {
-      const q = request.query;
-      const result =
-        'request_uri' in q
-          ? await oauthService.authorizeWithPar(request.userId, q.request_uri, q.client_id)
-          : await oauthService.authorize(request.userId, q);
+      const result = await oauthService.authorizeWithPar(
+        request.userId,
+        request.query.request_uri,
+        request.query.client_id,
+      );
       if (result.type === 'redirect') {
         return reply.redirect(result.redirectUri, 302);
       }
@@ -185,19 +186,19 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const authenticatedClient = await resolveAuthenticatedClient(db, request, request.body);
       const dpopHeader = request.headers.dpop;
       const dpopProof = typeof dpopHeader === 'string' ? dpopHeader : undefined;
-      let dpopJkt: string | undefined;
-      if (dpopProof !== undefined) {
-        // htu must match what the client signed, which is the actual token
-        // endpoint URL the client POSTed to — not JWT_ISSUER, since the issuer
-        // host (e.g. web app) and the API host may differ.
-        const htu = `${request.protocol}://${request.host}${request.url.split('?')[0]}`;
-        const dpopResult = await validateDpopProof(dpopProof, {
-          htm: 'POST',
-          htu,
-        });
-        dpopJkt = dpopResult.jkt;
+      if (!dpopProof) {
+        throw new ValidationError('DPoP proof is required', { dpop: 'Required' });
       }
-      const tokens = await oauthService.exchangeToken(request.body, authenticatedClient, dpopJkt);
+      const htu = `${request.protocol}://${request.host}${request.url.split('?')[0]}`;
+      const dpopResult = await validateDpopProof(dpopProof, {
+        htm: 'POST',
+        htu,
+      });
+      const tokens = await oauthService.exchangeToken(
+        request.body,
+        authenticatedClient,
+        dpopResult.jkt,
+      );
       return reply.status(200).send(tokens);
     },
   );
@@ -295,6 +296,20 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
         } catch {
           // Session may already be destroyed — ignore
         }
+      }
+
+      const cookieName = getSessionCookieName(request);
+      const cookieValue = request.cookies?.[cookieName];
+      if (cookieValue) {
+        try {
+          const session = await validateSession(db, cookieValue);
+          if (session) {
+            await revokeSession(db, eventBus, session.id);
+          }
+        } catch {
+          // ignore
+        }
+        clearSessionCookie(reply, cookieName);
       }
 
       const result = await oauthService.endSession(request.query);

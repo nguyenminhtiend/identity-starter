@@ -27,6 +27,10 @@ async function fetchConsentData(
     throw new Error('Redirect with no location');
   }
 
+  if (response.status === 401) {
+    return { type: 'session_expired' as const };
+  }
+
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error((body as { error?: string }).error ?? 'Authorization failed');
@@ -53,7 +57,10 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
     redirect(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
   }
 
-  let response: ConsentRequired | { type: 'redirect'; location: string };
+  let response:
+    | ConsentRequired
+    | { type: 'redirect'; location: string }
+    | { type: 'session_expired' };
   try {
     response = await fetchConsentData(queryString);
   } catch (err) {
@@ -63,6 +70,13 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
         <p className="text-destructive">{message}</p>
       </div>
     );
+  }
+
+  if (response.type === 'session_expired') {
+    const cookieStore2 = await cookies();
+    cookieStore2.delete('session');
+    const callbackUrl = `/oauth/authorize?${queryString}`;
+    redirect(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
   }
 
   if (response.type === 'redirect') {

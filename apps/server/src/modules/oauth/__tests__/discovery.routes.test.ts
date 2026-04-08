@@ -69,7 +69,7 @@ describe('discovery routes', () => {
       expect(body.introspection_endpoint).toBe('http://localhost:3000/oauth/introspect');
       expect(body.end_session_endpoint).toBe('http://localhost:3000/oauth/end-session');
       expect(body.pushed_authorization_request_endpoint).toBe('http://localhost:3000/oauth/par');
-      expect(body.require_pushed_authorization_requests).toBe(false);
+      expect(body.require_pushed_authorization_requests).toBe(true);
       expect(body.jwks_uri).toBe('http://localhost:3000/.well-known/jwks.json');
       expect(body.response_types_supported).toEqual(['code']);
       expect(body.grant_types_supported).toEqual([

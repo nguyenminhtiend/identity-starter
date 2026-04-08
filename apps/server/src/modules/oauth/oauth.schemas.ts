@@ -20,10 +20,7 @@ export const authorizeQueryParSchema = z.object({
 
 export type AuthorizeQueryParInput = z.infer<typeof authorizeQueryParSchema>;
 
-export const authorizeQuerySchema = z.union([
-  authorizeQueryStandardSchema,
-  authorizeQueryParSchema,
-]);
+export const authorizeQuerySchema = authorizeQueryParSchema;
 
 export const parRequestSchema = z.object({
   response_type: z.literal('code'),

@@ -962,10 +962,12 @@ async function endSession(
     try {
       const jwks = await deps.signingKeyService.getJwks();
       const localJwks = jose.createLocalJWKSet(jwks);
-      const result = await verifyAccessToken(localJwks, params.id_token_hint, deps.env.jwtIssuer);
-      if (result) {
-        validatedClientId = audienceClientIdFromPayload(result.payload.aud);
-      }
+      const { payload } = await jose.jwtVerify(params.id_token_hint, localJwks, {
+        issuer: deps.env.jwtIssuer,
+        algorithms: ['RS256'],
+        clockTolerance: 315_360_000,
+      });
+      validatedClientId = audienceClientIdFromPayload(payload.aud);
     } catch {
       // Invalid token or JWKS failure — proceed without client validation
     }

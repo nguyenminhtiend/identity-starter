@@ -60,7 +60,7 @@ export const discoveryRoutes: FastifyPluginAsyncZod = async (fastify) => {
         introspection_endpoint: `${issuerBase}/oauth/introspect`,
         end_session_endpoint: `${issuerBase}/oauth/end-session`,
         pushed_authorization_request_endpoint: `${issuerBase}/oauth/par`,
-        require_pushed_authorization_requests: false,
+        require_pushed_authorization_requests: true,
         jwks_uri: `${issuerBase}/.well-known/jwks.json`,
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token', 'client_credentials'],

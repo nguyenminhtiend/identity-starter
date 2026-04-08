@@ -448,7 +448,11 @@ describe('oauth.service', () => {
       expect(publishSpy).toHaveBeenCalledWith(
         expect.objectContaining({
           eventName: OAUTH_EVENTS.CONSENT_REVOKED,
-          payload: { userId: USER_ID, clientId: PUBLIC_CLIENT_ID },
+          payload: {
+            userId: USER_ID,
+            clientId: PUBLIC_CLIENT_ID,
+            clientInternalId: INTERNAL_CLIENT_ID,
+          },
         }),
       );
     });
@@ -1240,10 +1244,11 @@ describe('oauth.service', () => {
       expect(mocks.getClientByClientId).not.toHaveBeenCalled();
     });
 
-    it('redirects to issuer when id_token_hint is invalid or expired (ignores post_logout_redirect_uri)', async () => {
+    it('accepts expired id_token_hint and redirects to registered post_logout_redirect_uri', async () => {
+      const postLogout = 'https://example.com/logout';
       mocks.getClientByClientId.mockResolvedValue(
         baseClient({
-          redirectUris: ['https://example.com/callback', 'https://example.com/logout'],
+          redirectUris: ['https://example.com/callback', postLogout],
         }),
       );
 
@@ -1258,16 +1263,28 @@ describe('oauth.service', () => {
 
       const expiredJwt = await mintIdToken({ expiresInSeconds: -3600 });
 
-      await expect(
-        service.endSession({
-          id_token_hint: 'not.a.valid.jwt',
-          post_logout_redirect_uri: 'https://example.com/logout',
-        }),
-      ).resolves.toEqual({ redirectUri: env.jwtIssuer });
+      const result = await service.endSession({
+        id_token_hint: expiredJwt,
+        post_logout_redirect_uri: postLogout,
+      });
+
+      expect(result.redirectUri).toBe(postLogout);
+      expect(mocks.getClientByClientId).toHaveBeenCalledWith(db, PUBLIC_CLIENT_ID);
+    });
+
+    it('redirects to issuer when id_token_hint is completely invalid (bad signature)', async () => {
+      const db = {} as never;
+      const service = createOAuthService({
+        db,
+        eventBus,
+        signingKeyService: signingKeyService as never,
+        refreshTokenService: refreshTokenService as never,
+        env,
+      });
 
       await expect(
         service.endSession({
-          id_token_hint: expiredJwt,
+          id_token_hint: 'not.a.valid.jwt',
           post_logout_redirect_uri: 'https://example.com/logout',
         }),
       ).resolves.toEqual({ redirectUri: env.jwtIssuer });
