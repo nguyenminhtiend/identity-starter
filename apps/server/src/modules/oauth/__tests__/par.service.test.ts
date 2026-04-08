@@ -1,6 +1,6 @@
 import type { Database } from '@identity-starter/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { consumeParRequest, createParRequest, type ParRequestParams } from '../par.service.js';
+import { createParRequest, type ParRequestParams, readParRequest } from '../par.service.js';
 
 const randomBytesMock = vi.hoisted(() => vi.fn(() => Buffer.alloc(32, 7)));
 
@@ -50,11 +50,12 @@ describe('par.service', () => {
     });
   });
 
-  describe('consumeParRequest', () => {
+  describe('readParRequest', () => {
+    // note: readParRequest no longer mutates; markParRequestUsed handles the write
     const rowId = '20000000-0000-7000-8000-000000000002';
     const requestUri = 'urn:ietf:params:oauth:request_uri:test';
 
-    it('returns stored params parsed from JSON and marks as used', async () => {
+    it('returns stored params parsed from JSON without mutating the row', async () => {
       const row = {
         id: rowId,
         requestUri,
@@ -70,17 +71,13 @@ describe('par.service', () => {
       const from = vi.fn().mockReturnValue({ where: whereSelect });
       const select = vi.fn().mockReturnValue({ from });
 
-      const updateWhere = vi.fn().mockResolvedValue(undefined);
-      const set = vi.fn().mockReturnValue({ where: updateWhere });
-      const update = vi.fn().mockReturnValue({ set });
-
+      const update = vi.fn();
       const db = { select, update } as unknown as Database;
 
-      const out = await consumeParRequest(db, requestUri, clientInternalId);
+      const out = await readParRequest(db, requestUri, clientInternalId);
 
-      expect(out).toEqual(params);
-      expect(set).toHaveBeenCalledWith({ usedAt: expect.any(Date) });
-      expect(updateWhere).toHaveBeenCalled();
+      expect(out).toEqual({ id: rowId, params });
+      expect(update).not.toHaveBeenCalled();
     });
 
     it('throws when PAR is expired', async () => {
@@ -102,7 +99,7 @@ describe('par.service', () => {
         update: vi.fn(),
       } as unknown as Database;
 
-      await expect(consumeParRequest(db, requestUri, clientInternalId)).rejects.toMatchObject({
+      await expect(readParRequest(db, requestUri, clientInternalId)).rejects.toMatchObject({
         message: 'PAR request expired',
       });
     });
@@ -126,7 +123,7 @@ describe('par.service', () => {
         update: vi.fn(),
       } as unknown as Database;
 
-      await expect(consumeParRequest(db, requestUri, clientInternalId)).rejects.toMatchObject({
+      await expect(readParRequest(db, requestUri, clientInternalId)).rejects.toMatchObject({
         message: 'PAR request already used',
       });
     });
@@ -151,7 +148,7 @@ describe('par.service', () => {
       } as unknown as Database;
 
       await expect(
-        consumeParRequest(db, requestUri, '99999999-9999-7999-8999-999999999999'),
+        readParRequest(db, requestUri, '99999999-9999-7999-8999-999999999999'),
       ).rejects.toMatchObject({
         message: 'Invalid request_uri',
       });
@@ -166,7 +163,7 @@ describe('par.service', () => {
         update: vi.fn(),
       } as unknown as Database;
 
-      await expect(consumeParRequest(db, requestUri, clientInternalId)).rejects.toMatchObject({
+      await expect(readParRequest(db, requestUri, clientInternalId)).rejects.toMatchObject({
         message: 'Invalid request_uri',
       });
     });

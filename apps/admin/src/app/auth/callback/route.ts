@@ -1,12 +1,22 @@
+import type { JWK } from 'jose';
 import { cookies } from 'next/headers';
 import { type NextRequest, NextResponse } from 'next/server';
+import { createDPoPProof } from '@/lib/dpop';
 import {
+  basicAuthHeader,
   encryptTokens,
   OAUTH_CONFIG,
   PKCE_COOKIE_NAME,
   SESSION_COOKIE_NAME,
   type TokenSet,
 } from '@/lib/oauth';
+
+interface PkceCookieData {
+  codeVerifier: string;
+  state: string;
+  dpopPrivateJwk: JWK;
+  dpopPublicJwk: JWK;
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -30,26 +40,36 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/auth/login', request.url));
   }
 
-  let pkceData: { codeVerifier: string; state: string };
+  let pkceData: PkceCookieData;
   try {
     pkceData = JSON.parse(pkceCookie.value);
   } catch {
     return NextResponse.redirect(new URL('/auth/login', request.url));
   }
 
-  if (state !== pkceData.state) {
+  if (
+    state !== pkceData.state ||
+    !pkceData.codeVerifier ||
+    !pkceData.dpopPrivateJwk ||
+    !pkceData.dpopPublicJwk
+  ) {
+    cookieStore.delete(PKCE_COOKIE_NAME);
     return NextResponse.redirect(new URL('/auth/login', request.url));
   }
 
-  const basicAuth = Buffer.from(`${OAUTH_CONFIG.clientId}:${OAUTH_CONFIG.clientSecret}`).toString(
-    'base64',
-  );
+  const tokenUrl = `${OAUTH_CONFIG.apiUrl}/oauth/token`;
+  const dpopKeyPair = {
+    privateJwk: pkceData.dpopPrivateJwk,
+    publicJwk: pkceData.dpopPublicJwk,
+  };
+  const dpopProof = await createDPoPProof(dpopKeyPair, 'POST', tokenUrl);
 
-  const tokenResponse = await fetch(`${OAUTH_CONFIG.apiUrl}/oauth/token`, {
+  const tokenResponse = await fetch(tokenUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${basicAuth}`,
+      Authorization: `Basic ${basicAuthHeader()}`,
+      DPoP: dpopProof,
     },
     body: new URLSearchParams({
       grant_type: 'authorization_code',
@@ -68,6 +88,7 @@ export async function GET(request: NextRequest) {
     refresh_token?: string;
     id_token?: string;
     expires_in: number;
+    token_type: string;
   };
 
   const tokenSet: TokenSet = {
@@ -75,6 +96,8 @@ export async function GET(request: NextRequest) {
     refresh_token: tokens.refresh_token,
     id_token: tokens.id_token,
     expires_at: Date.now() + tokens.expires_in * 1000,
+    dpop_private_jwk: dpopKeyPair.privateJwk,
+    dpop_public_jwk: dpopKeyPair.publicJwk,
   };
 
   const encrypted = encryptTokens(tokenSet);

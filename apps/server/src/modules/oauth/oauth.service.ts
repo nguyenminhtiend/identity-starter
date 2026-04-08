@@ -44,7 +44,12 @@ import type {
   TokenResponse,
   UserinfoResponse,
 } from './oauth.schemas.js';
-import { consumeParRequest, createParRequest, type ParRequestParams } from './par.service.js';
+import {
+  createParRequest,
+  markParRequestUsed,
+  type ParRequestParams,
+  readParRequest,
+} from './par.service.js';
 
 export type AuthorizeResult =
   | {
@@ -328,7 +333,7 @@ async function authorizeWithPar(
   clientId: string,
 ): Promise<AuthorizeResult> {
   const client = await getClientByClientId(deps.db, clientId);
-  const params = await consumeParRequest(deps.db, requestUri, client.id);
+  const { id: parId, params } = await readParRequest(deps.db, requestUri, client.id);
   const query: AuthorizeQueryInput = {
     response_type: 'code',
     client_id: clientId,
@@ -339,7 +344,14 @@ async function authorizeWithPar(
     code_challenge_method: params.code_challenge_method as 'S256',
     nonce: params.nonce,
   };
-  return authorize(deps, userId, query);
+  const result = await authorize(deps, userId, query);
+  // Mark the PAR request used only after a terminal success (redirect with an
+  // issued code). consent_required is non-terminal — the consent form resubmits
+  // via /oauth/consent with the plain params and does not re-read the PAR.
+  if (result.type === 'redirect') {
+    await markParRequestUsed(deps.db, parId);
+  }
+  return result;
 }
 
 async function submitConsent(

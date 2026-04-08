@@ -34,11 +34,11 @@ export async function createParRequest(
   return { request_uri: requestUri, expires_in: ttlSeconds };
 }
 
-export async function consumeParRequest(
+export async function readParRequest(
   db: Database,
   requestUri: string,
   clientInternalId: string,
-): Promise<ParRequestParams> {
+): Promise<{ id: string; params: ParRequestParams }> {
   const [row] = await db
     .select()
     .from(parRequests)
@@ -61,7 +61,9 @@ export async function consumeParRequest(
     throw new ValidationError('PAR request already used', { request_uri: 'Already used' });
   }
 
-  await db.update(parRequests).set({ usedAt: new Date() }).where(eq(parRequests.id, row.id));
+  return { id: row.id, params: JSON.parse(row.parameters) as ParRequestParams };
+}
 
-  return JSON.parse(row.parameters) as ParRequestParams;
+export async function markParRequestUsed(db: Database, id: string): Promise<void> {
+  await db.update(parRequests).set({ usedAt: new Date() }).where(eq(parRequests.id, id));
 }

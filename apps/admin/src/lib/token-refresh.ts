@@ -1,17 +1,31 @@
 import { cookies } from 'next/headers';
-import { encryptTokens, OAUTH_CONFIG, SESSION_COOKIE_NAME, type TokenSet } from './oauth';
+import { createDPoPProof, type DPoPKeyPairJwk } from './dpop';
+import {
+  basicAuthHeader,
+  encryptTokens,
+  OAUTH_CONFIG,
+  SESSION_COOKIE_NAME,
+  type TokenSet,
+} from './oauth';
 
-export async function refreshAccessToken(refreshToken: string): Promise<TokenSet | null> {
-  const basicAuth = Buffer.from(`${OAUTH_CONFIG.clientId}:${OAUTH_CONFIG.clientSecret}`).toString(
-    'base64',
-  );
+export async function refreshAccessToken(
+  refreshToken: string,
+  dpopKeyPair?: DPoPKeyPairJwk,
+): Promise<TokenSet | null> {
+  const tokenUrl = `${OAUTH_CONFIG.apiUrl}/oauth/token`;
 
-  const response = await fetch(`${OAUTH_CONFIG.apiUrl}/oauth/token`, {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    Authorization: `Basic ${basicAuthHeader()}`,
+  };
+
+  if (dpopKeyPair) {
+    headers.DPoP = await createDPoPProof(dpopKeyPair, 'POST', tokenUrl);
+  }
+
+  const response = await fetch(tokenUrl, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Authorization: `Basic ${basicAuth}`,
-    },
+    headers,
     body: new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
@@ -34,6 +48,8 @@ export async function refreshAccessToken(refreshToken: string): Promise<TokenSet
     refresh_token: data.refresh_token ?? refreshToken,
     id_token: data.id_token,
     expires_at: Date.now() + data.expires_in * 1000,
+    dpop_private_jwk: dpopKeyPair?.privateJwk,
+    dpop_public_jwk: dpopKeyPair?.publicJwk,
   };
 
   const encrypted = encryptTokens(tokenSet);

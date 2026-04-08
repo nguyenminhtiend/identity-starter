@@ -187,10 +187,13 @@ export const oauthRoutes: FastifyPluginAsyncZod = async (fastify) => {
       const dpopProof = typeof dpopHeader === 'string' ? dpopHeader : undefined;
       let dpopJkt: string | undefined;
       if (dpopProof !== undefined) {
-        const issuerBase = env.JWT_ISSUER.replace(/\/$/, '');
+        // htu must match what the client signed, which is the actual token
+        // endpoint URL the client POSTed to — not JWT_ISSUER, since the issuer
+        // host (e.g. web app) and the API host may differ.
+        const htu = `${request.protocol}://${request.host}${request.url.split('?')[0]}`;
         const dpopResult = await validateDpopProof(dpopProof, {
           htm: 'POST',
-          htu: `${issuerBase}/oauth/token`,
+          htu,
         });
         dpopJkt = dpopResult.jkt;
       }

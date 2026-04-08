@@ -22,7 +22,21 @@ export function AdminSidebar({ displayName, email }: AdminSidebarProps) {
   const router = useRouter();
 
   async function handleLogout() {
-    await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    const response = await fetch('/auth/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+    });
+    // Navigate to IdP end-session so its session cookie is cleared too —
+    // otherwise /auth/login would immediately SSO the user back in.
+    try {
+      const { endSessionUrl } = (await response.json()) as { endSessionUrl?: string };
+      if (endSessionUrl) {
+        window.location.href = endSessionUrl;
+        return;
+      }
+    } catch {
+      // fall through to local redirect
+    }
     router.push('/auth/login');
     router.refresh();
   }

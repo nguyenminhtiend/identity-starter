@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import type { JWK } from 'jose';
 import { env } from './env';
 
 export const OAUTH_CONFIG = {
@@ -30,6 +31,8 @@ export interface TokenSet {
   refresh_token?: string;
   id_token?: string;
   expires_at: number;
+  dpop_private_jwk?: JWK;
+  dpop_public_jwk?: JWK;
 }
 
 const ALGORITHM = 'aes-256-gcm';
@@ -62,17 +65,8 @@ export function decryptTokens(encrypted: string): TokenSet | null {
   }
 }
 
-export function buildAuthorizeUrl(state: string, codeChallenge: string): string {
-  const params = new URLSearchParams({
-    response_type: 'code',
-    client_id: OAUTH_CONFIG.clientId,
-    redirect_uri: OAUTH_CONFIG.redirectUri,
-    scope: OAUTH_CONFIG.scopes,
-    code_challenge: codeChallenge,
-    code_challenge_method: 'S256',
-    state,
-  });
-  return `${OAUTH_CONFIG.issuer}/oauth/authorize?${params.toString()}`;
+export function basicAuthHeader(): string {
+  return Buffer.from(`${OAUTH_CONFIG.clientId}:${OAUTH_CONFIG.clientSecret}`).toString('base64');
 }
 
 export { PKCE_COOKIE_NAME };
