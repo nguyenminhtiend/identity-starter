@@ -17,6 +17,7 @@ async function fetchConsentData(
   const response = await fetch(`${apiUrl}/oauth/authorize?${queryString}`, {
     headers: session ? { Authorization: `Bearer ${session.value}` } : {},
     redirect: 'manual',
+    cache: 'no-store',
   });
 
   if (response.status >= 300 && response.status < 400) {

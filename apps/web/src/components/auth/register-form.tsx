@@ -44,7 +44,6 @@ export function RegisterForm() {
       }),
     onSuccess: () => {
       router.push('/verify-email');
-      router.refresh();
     },
   });
 

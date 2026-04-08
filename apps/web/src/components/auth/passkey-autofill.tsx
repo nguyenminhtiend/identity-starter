@@ -51,7 +51,6 @@ export function PasskeyAutofill({ callbackUrl }: PasskeyAutofillProps) {
         });
 
         router.push(callbackUrl);
-        router.refresh();
       } catch {
         // User cancelled or browser doesn't support — fail silently
       }

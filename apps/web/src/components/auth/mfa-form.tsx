@@ -57,7 +57,6 @@ export function MfaForm() {
       }),
     onSuccess: () => {
       router.push(callbackUrl);
-      router.refresh();
     },
   });
 
@@ -69,7 +68,6 @@ export function MfaForm() {
       }),
     onSuccess: () => {
       router.push(callbackUrl);
-      router.refresh();
     },
   });
 

@@ -48,7 +48,6 @@ export function LoginForm() {
         router.push(`/mfa?token=${data.mfaToken}&callbackUrl=${encodeURIComponent(callbackUrl)}`);
       } else {
         router.push(callbackUrl);
-        router.refresh();
       }
     },
   });
