@@ -5,6 +5,7 @@ import { useMutation } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { PasskeyLoginButton } from '@/components/auth/passkey-login-button';
 import { ApiErrorAlert } from '@/components/shared/api-error-alert';
 import { LoadingButton } from '@/components/shared/loading-button';
 import { PasswordInput } from '@/components/shared/password-input';
@@ -47,7 +48,7 @@ export function LoginForm() {
       if (isMfaChallenge(data)) {
         router.push(`/mfa?token=${data.mfaToken}&callbackUrl=${encodeURIComponent(callbackUrl)}`);
       } else {
-        router.push(callbackUrl);
+        router.push(`/setup-passkey?callbackUrl=${encodeURIComponent(callbackUrl)}`);
       }
     },
   });
@@ -88,6 +89,17 @@ export function LoginForm() {
         <LoadingButton type="submit" className="w-full" loading={mutation.isPending}>
           Sign in
         </LoadingButton>
+
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-background px-2 text-muted-foreground">or</span>
+          </div>
+        </div>
+
+        <PasskeyLoginButton />
       </form>
     </Form>
   );

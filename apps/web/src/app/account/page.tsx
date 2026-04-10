@@ -1,4 +1,5 @@
 import { AccountProfile } from '@/components/account/account-profile';
+import { PasskeyManager } from '@/components/account/passkey-manager';
 import { serverFetch } from '@/lib/api-client';
 
 interface Profile {
@@ -15,8 +16,9 @@ export default async function AccountPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-muted/40 px-4">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md space-y-6">
         <AccountProfile profile={profile} />
+        <PasskeyManager />
       </div>
     </div>
   );
