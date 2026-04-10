@@ -6,12 +6,12 @@ import { env } from './env';
 import { decryptTokens, SESSION_COOKIE_NAME, type TokenSet } from './oauth';
 import { refreshAccessToken } from './token-refresh';
 
-interface ResolvedCredentials {
+export interface ResolvedCredentials {
   accessToken: string;
   dpopKeyPair: DPoPKeyPairJwk;
 }
 
-async function getCredentials(): Promise<ResolvedCredentials | null> {
+export async function getCredentials(): Promise<ResolvedCredentials | null> {
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
   if (!sessionCookie) {
