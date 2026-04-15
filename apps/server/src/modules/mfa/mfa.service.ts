@@ -65,10 +65,8 @@ function requireTotpKey(): string {
 
 export async function enrollTotp(
   db: Database,
-  eventBus: EventBus,
   userId: string,
 ): Promise<{ otpauthUri: string; recoveryCodes: string[] }> {
-  void eventBus;
   const encryptionKey = requireTotpKey();
 
   const [userRow] = await db.select(userColumns).from(users).where(eq(users.id, userId)).limit(1);
@@ -352,7 +350,7 @@ export interface MfaServiceDeps {
 export function createMfaService(deps: MfaServiceDeps) {
   const { db, eventBus } = deps;
   return {
-    enrollTotp: (userId: string) => enrollTotp(db, eventBus, userId),
+    enrollTotp: (userId: string) => enrollTotp(db, userId),
     verifyTotpEnrollment: (userId: string, otp: string) =>
       verifyTotpEnrollment(db, eventBus, userId, otp),
     disableTotp: (userId: string, password: string) => disableTotp(db, eventBus, userId, password),

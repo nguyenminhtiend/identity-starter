@@ -73,7 +73,7 @@ export async function enrollAndVerifyTotp(
   eventBus: EventBus,
   userId: string,
 ): Promise<{ otpauthUri: string; recoveryCodes: string[] }> {
-  const { otpauthUri, recoveryCodes } = await enrollTotp(db, eventBus, userId);
+  const { otpauthUri, recoveryCodes } = await enrollTotp(db, userId);
   const parsed = OTPAuth.URI.parse(otpauthUri);
   if (!(parsed instanceof OTPAuth.TOTP)) {
     throw new Error('Expected TOTP key URI');

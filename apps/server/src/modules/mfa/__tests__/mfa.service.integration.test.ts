@@ -38,7 +38,7 @@ describe('MFA service integration', () => {
   it('enrolls TOTP, verifies OTP, and marks secret verified', async () => {
     const password = 'integration-pass-1';
     const { user } = await createUserWithPassword(testDb.db, eventBus, password);
-    const { otpauthUri } = await enrollTotp(testDb.db, eventBus, user.id);
+    const { otpauthUri } = await enrollTotp(testDb.db, user.id);
     const parsed = OTPAuth.URI.parse(otpauthUri);
     if (!(parsed instanceof OTPAuth.TOTP)) {
       throw new Error('expected TOTP');

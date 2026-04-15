@@ -108,16 +108,14 @@ describe('enrollTotp', () => {
   it('throws ValidationError when TOTP_ENCRYPTION_KEY is missing', async () => {
     mockEnvState.TOTP_ENCRYPTION_KEY = undefined;
     const db = {} as unknown as Database;
-    const eventBus = new InMemoryEventBus();
-    await expect(enrollTotp(db, eventBus, userId)).rejects.toThrow(ValidationError);
+    await expect(enrollTotp(db, userId)).rejects.toThrow(ValidationError);
   });
 
   it('throws NotFoundError when user is missing', async () => {
     const db = {
       select: vi.fn().mockReturnValue(selectChain([])),
     } as unknown as Database;
-    const eventBus = new InMemoryEventBus();
-    await expect(enrollTotp(db, eventBus, userId)).rejects.toThrow(NotFoundError);
+    await expect(enrollTotp(db, userId)).rejects.toThrow(NotFoundError);
   });
 
   it('throws ConflictError when verified TOTP already exists', async () => {
@@ -127,8 +125,7 @@ describe('enrollTotp', () => {
         .mockReturnValueOnce(selectChain([userRow()]))
         .mockReturnValueOnce(selectChain([{ id: 'existing' }])),
     } as unknown as Database;
-    const eventBus = new InMemoryEventBus();
-    await expect(enrollTotp(db, eventBus, userId)).rejects.toThrow(ConflictError);
+    await expect(enrollTotp(db, userId)).rejects.toThrow(ConflictError);
   });
 
   it('deletes unverified secrets, inserts TOTP and recovery rows on success', async () => {
@@ -142,9 +139,8 @@ describe('enrollTotp', () => {
       delete: vi.fn().mockReturnValue({ where: deleteWhere }),
       insert: vi.fn().mockReturnValue({ values: valuesSpy }),
     } as unknown as Database;
-    const eventBus = new InMemoryEventBus();
 
-    const result = await enrollTotp(db, eventBus, userId);
+    const result = await enrollTotp(db, userId);
 
     expect(result.otpauthUri).toContain('otpauth://');
     expect(result.recoveryCodes).toHaveLength(8);
