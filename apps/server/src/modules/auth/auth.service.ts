@@ -19,10 +19,10 @@ import type {
 import { generateVerificationToken } from './email-verification.service.js';
 import { calculateDelay, getRecentFailureCount, recordAttempt } from './login-attempts.service.js';
 
-type SafeRow = typeof userColumns;
-type SafeRowResult = { [K in keyof SafeRow]: SafeRow[K]['_']['data'] };
+type UserPublicFields = typeof userColumns;
+type UserPublicData = { [K in keyof UserPublicFields]: UserPublicFields[K]['_']['data'] };
 
-function toAuthResponse(row: SafeRowResult, token: string): AuthResponse {
+function toAuthResponse(row: UserPublicData, token: string): AuthResponse {
   return {
     token,
     user: {
@@ -45,7 +45,7 @@ export async function register(
 ): Promise<RegisterResult> {
   const passwordHash = await hashPassword(input.password);
 
-  let userRow: SafeRowResult;
+  let userRow: UserPublicData;
   try {
     [userRow] = await db
       .insert(users)
