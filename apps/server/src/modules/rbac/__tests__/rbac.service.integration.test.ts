@@ -137,7 +137,7 @@ describe('listRoles', () => {
 
     const list = await listRoles(testDb.db);
 
-    expect(list.length).toBeGreaterThanOrEqual(3);
+    expect(list.data.length).toBeGreaterThanOrEqual(3);
 
     const admin = list.find((r) => r.name === 'admin');
     expect(admin).toBeDefined();
@@ -160,7 +160,7 @@ describe('listRoles', () => {
     await setRolePermissions(testDb.db, eventBus, role.id, twoPerms);
 
     const list = await listRoles(testDb.db);
-    const found = list.find((r) => r.id === role.id);
+    const found = list.data.find((r) => r.id === role.id);
     expect(found?.permissionCount).toBe(2);
   });
 });

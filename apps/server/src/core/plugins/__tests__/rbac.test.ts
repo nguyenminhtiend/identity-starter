@@ -38,6 +38,7 @@ describe('rbacPlugin requirePermission', () => {
         container: {
           db: dummyDb,
           eventBus: new InMemoryEventBus(),
+          redis: null,
         } satisfies Container,
       });
 
@@ -80,6 +81,7 @@ describe('rbacPlugin requirePermission', () => {
         container: {
           db: dummyDb,
           eventBus: new InMemoryEventBus(),
+          redis: null,
         } satisfies Container,
       });
 
@@ -124,6 +126,7 @@ describe('rbacPlugin requirePermission', () => {
         container: {
           db: dummyDb,
           eventBus: new InMemoryEventBus(),
+          redis: null,
         } satisfies Container,
       });
 
@@ -170,6 +173,7 @@ describe('rbacPlugin requirePermission', () => {
         container: {
           db: dummyDb,
           eventBus: new InMemoryEventBus(),
+          redis: null,
         } satisfies Container,
       });
 

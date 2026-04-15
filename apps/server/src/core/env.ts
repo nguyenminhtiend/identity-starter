@@ -32,8 +32,8 @@ const EnvSchema = baseEnvSchema.extend({
     .length(64)
     .default('0'.repeat(64))
     .refine(
-      (v) => process.env.NODE_ENV !== 'production' || v !== '0'.repeat(64),
-      'TOTP_ENCRYPTION_KEY must be set to a secure value in production',
+      (v) => process.env.NODE_ENV === 'test' || v !== '0'.repeat(64),
+      'TOTP_ENCRYPTION_KEY must be set to a real secret — the all-zeros default is not allowed in non-test environments',
     ),
   RATE_LIMIT_ENABLED: z
     .enum(['true', 'false'])

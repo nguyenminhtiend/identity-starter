@@ -6,12 +6,12 @@ import {
 } from '../admin.schemas.js';
 
 describe('userListQuerySchema', () => {
-  it('defaults page to 1 and limit to 20', () => {
+  it('defaults page to 1 and limit to 50', () => {
     const result = userListQuerySchema.safeParse({});
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.page).toBe(1);
-      expect(result.data.limit).toBe(20);
+      expect(result.data.limit).toBe(50);
     }
   });
 
@@ -64,7 +64,7 @@ describe('sessionListQuerySchema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.page).toBe(1);
-      expect(result.data.limit).toBe(20);
+      expect(result.data.limit).toBe(50);
     }
   });
 

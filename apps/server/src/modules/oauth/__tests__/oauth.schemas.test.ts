@@ -186,7 +186,7 @@ describe('consentSchema', () => {
     client_id: 'client-1',
     scope: 'openid email',
     decision: 'approve' as const,
-    state: 's',
+    state: 'a'.repeat(16),
     redirect_uri: 'myapp://cb',
     code_challenge: codeChallenge,
     code_challenge_method: 'S256' as const,

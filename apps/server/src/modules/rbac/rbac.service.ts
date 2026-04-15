@@ -1,7 +1,7 @@
 import { ConflictError, NotFoundError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
 import { permissions, rolePermissions, roles, userRoles, users } from '@identity-starter/db';
-import { and, count, eq, inArray } from 'drizzle-orm';
+import { and, count, eq, inArray, sql } from 'drizzle-orm';
 import { createDomainEvent, type EventBus } from '../../infra/event-bus.js';
 import { RBAC_EVENTS } from './rbac.events.js';
 import type { CreateRoleInput } from './rbac.schemas.js';
@@ -53,8 +53,16 @@ export async function createRole(db: Database, eventBus: EventBus, input: Create
   }
 }
 
-export async function listRoles(db: Database) {
-  const rows = await db
+export interface ListRolesQuery {
+  page: number;
+  limit: number;
+}
+
+export async function listRoles(db: Database, query: ListRolesQuery = { page: 1, limit: 50 }) {
+  const [{ total }] = await db.select({ total: count() }).from(roles);
+
+  const offset = (query.page - 1) * query.limit;
+  const data = await db
     .select({
       id: roles.id,
       name: roles.name,
@@ -66,9 +74,11 @@ export async function listRoles(db: Database) {
     .from(roles)
     .leftJoin(rolePermissions, eq(rolePermissions.roleId, roles.id))
     .groupBy(roles.id)
-    .orderBy(roles.name);
+    .orderBy(roles.name)
+    .limit(query.limit)
+    .offset(offset);
 
-  return rows;
+  return { data, total, page: query.page, limit: query.limit };
 }
 
 export async function setRolePermissions(
@@ -155,27 +165,16 @@ export async function hasPermission(
   resource: string,
   action: string,
 ): Promise<boolean> {
-  const [superAdminRole] = await db
-    .select({ id: userRoles.roleId })
+  const [match] = await db
+    .select({ roleId: userRoles.roleId })
     .from(userRoles)
     .innerJoin(roles, eq(roles.id, userRoles.roleId))
-    .where(and(eq(userRoles.userId, userId), eq(roles.name, 'super_admin')))
-    .limit(1);
-
-  if (superAdminRole) {
-    return true;
-  }
-
-  const [match] = await db
-    .select({ id: rolePermissions.permissionId })
-    .from(userRoles)
-    .innerJoin(rolePermissions, eq(rolePermissions.roleId, userRoles.roleId))
-    .innerJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
+    .leftJoin(rolePermissions, eq(rolePermissions.roleId, userRoles.roleId))
+    .leftJoin(permissions, eq(permissions.id, rolePermissions.permissionId))
     .where(
       and(
         eq(userRoles.userId, userId),
-        eq(permissions.resource, resource),
-        eq(permissions.action, action),
+        sql`(${roles.name} = 'super_admin' OR (${permissions.resource} = ${resource} AND ${permissions.action} = ${action}))`,
       ),
     )
     .limit(1);

@@ -270,17 +270,22 @@ describe('admin routes', () => {
   });
 
   describe('GET /api/admin/roles', () => {
-    it('returns 200 with role list and permission counts', async () => {
-      mocks.listRoles.mockResolvedValue([
-        {
-          id: roleId,
-          name: 'admin',
-          description: 'System admin role',
-          isSystem: true,
-          createdAt: new Date(),
-          permissionCount: 5,
-        },
-      ]);
+    it('returns 200 with paginated role list and permission counts', async () => {
+      mocks.listRoles.mockResolvedValue({
+        data: [
+          {
+            id: roleId,
+            name: 'admin',
+            description: 'System admin role',
+            isSystem: true,
+            createdAt: new Date(),
+            permissionCount: 5,
+          },
+        ],
+        total: 1,
+        page: 1,
+        limit: 50,
+      });
 
       const response = await app.inject({
         method: 'GET',
@@ -290,8 +295,9 @@ describe('admin routes', () => {
 
       expect(response.statusCode).toBe(200);
       const body = response.json();
-      expect(body).toHaveLength(1);
-      expect(body[0].permissionCount).toBe(5);
+      expect(body.data).toHaveLength(1);
+      expect(body.data[0].permissionCount).toBe(5);
+      expect(body.total).toBe(1);
     });
   });
 

@@ -167,6 +167,8 @@ describe('audit routes', () => {
         totalEntries: 10,
         checkedEntries: 10,
         firstInvalidEntryId: null,
+        lastCheckedId: '550e8400-e29b-41d4-a716-446655440010',
+        lastHash: 'abc123',
       });
 
       const response = await app.inject({
@@ -189,6 +191,8 @@ describe('audit routes', () => {
         totalEntries: 5,
         checkedEntries: 3,
         firstInvalidEntryId: '550e8400-e29b-41d4-a716-446655440099',
+        lastCheckedId: '550e8400-e29b-41d4-a716-446655440099',
+        lastHash: null,
       });
 
       const response = await app.inject({

@@ -158,8 +158,9 @@ describe('admin routes integration', () => {
       });
       expect(res.statusCode).toBe(200);
       const body = res.json();
-      expect(body.length).toBeGreaterThanOrEqual(3);
-      expect(body.some((r: { name: string }) => r.name === 'admin')).toBe(true);
+      expect(body.data.length).toBeGreaterThanOrEqual(3);
+      expect(body.data.some((r: { name: string }) => r.name === 'admin')).toBe(true);
+      expect(body.total).toBeGreaterThanOrEqual(3);
     });
 
     it('PUT /api/admin/roles/:id/permissions sets permissions', async () => {

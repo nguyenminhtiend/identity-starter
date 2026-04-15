@@ -43,7 +43,19 @@ export const roleWithPermissionCountSchema = roleSchema.extend({
 
 export type RoleWithPermissionCount = z.infer<typeof roleWithPermissionCountSchema>;
 
-export const roleListResponseSchema = z.array(roleWithPermissionCountSchema);
+export const roleListQuerySchema = z.object({
+  page: z.coerce.number().min(1).default(1),
+  limit: z.coerce.number().min(1).max(200).default(50),
+});
+
+export type RoleListQuery = z.infer<typeof roleListQuerySchema>;
+
+export const roleListResponseSchema = z.object({
+  data: z.array(roleWithPermissionCountSchema),
+  total: z.number(),
+  page: z.number(),
+  limit: z.number(),
+});
 
 export const roleIdParamSchema = z.object({
   id: z.uuid(),

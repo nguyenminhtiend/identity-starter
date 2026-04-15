@@ -1,4 +1,4 @@
-import { pgTable, primaryKey, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, pgTable, primaryKey, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { roles } from './role.js';
 import { users } from './user.js';
 
@@ -14,5 +14,8 @@ export const userRoles = pgTable(
     assignedAt: timestamp('assigned_at', { withTimezone: true }).notNull().defaultNow(),
     assignedBy: uuid('assigned_by').references(() => users.id, { onDelete: 'set null' }),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.roleId] })],
+  (t) => [
+    primaryKey({ columns: [t.userId, t.roleId] }),
+    index('user_roles_role_id_idx').on(t.roleId),
+  ],
 );

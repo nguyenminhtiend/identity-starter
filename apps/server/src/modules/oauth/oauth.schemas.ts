@@ -5,7 +5,7 @@ export const authorizeQueryStandardSchema = z.object({
   client_id: z.string().min(1),
   redirect_uri: z.string().min(1),
   scope: z.string().min(1),
-  state: z.string(),
+  state: z.string().min(16),
   code_challenge: z.string().min(43).max(128),
   code_challenge_method: z.literal('S256'),
   nonce: z.string().optional(),
@@ -92,7 +92,7 @@ const consentApproveSchema = z.object({
   client_id: z.string().min(1),
   scope: z.string().min(1),
   decision: z.literal('approve'),
-  state: z.string().min(1),
+  state: z.string().min(16),
   redirect_uri: z.string().min(1),
   code_challenge: z.string().min(43).max(128),
   code_challenge_method: z.literal('S256'),
@@ -103,7 +103,7 @@ const consentDenySchema = z.object({
   client_id: z.string().min(1),
   scope: z.string().min(1),
   decision: z.literal('deny'),
-  state: z.string().min(1),
+  state: z.string().min(16),
   redirect_uri: z.string().min(1),
 });
 

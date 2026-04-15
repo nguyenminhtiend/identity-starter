@@ -85,6 +85,13 @@
       "when": 1774769779012,
       "tag": "0011_lumpy_joseph",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1776261092311,
+      "tag": "0012_add_fk_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -107,7 +107,7 @@ export async function login(
         reason: 'account_suspended',
       }),
     );
-    throw new UnauthorizedError('Account is suspended');
+    throw new UnauthorizedError('Invalid email or password');
   }
 
   const valid = await verifyPassword(row.passwordHash, input.password);

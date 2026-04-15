@@ -49,6 +49,8 @@ export const auditChainVerificationResponseSchema = z.object({
   totalEntries: z.number(),
   checkedEntries: z.number(),
   firstInvalidEntryId: z.uuid().nullable(),
+  lastCheckedId: z.uuid().nullable(),
+  lastHash: z.string().nullable(),
 });
 
 export interface CreateAuditLogInput {

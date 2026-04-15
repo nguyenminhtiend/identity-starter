@@ -58,7 +58,7 @@ describe('createRole', () => {
 });
 
 describe('listRoles', () => {
-  it('returns roles with permission counts', async () => {
+  it('returns paginated roles with permission counts', async () => {
     const rows = [
       {
         id: ROLE_ID,
@@ -69,18 +69,32 @@ describe('listRoles', () => {
         permissionCount: 5,
       },
     ];
-    const orderBy = vi.fn().mockResolvedValue(rows);
+    const offset = vi.fn().mockResolvedValue(rows);
+    const limit = vi.fn().mockReturnValue({ offset });
+    const orderBy = vi.fn().mockReturnValue({ limit });
     const groupBy = vi.fn().mockReturnValue({ orderBy });
     const leftJoin = vi.fn().mockReturnValue({ groupBy });
-    const from = vi.fn().mockReturnValue({ leftJoin });
+    const dataFrom = vi.fn().mockReturnValue({ leftJoin });
+
+    const countFrom = vi.fn().mockResolvedValue([{ total: 1 }]);
+
+    let callCount = 0;
     const db = createMockDb({
-      select: vi.fn().mockReturnValue({ from }),
+      select: vi.fn().mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) {
+          return { from: countFrom };
+        }
+        return { from: dataFrom };
+      }),
     });
 
-    const result = await listRoles(db);
+    const result = await listRoles(db, { page: 1, limit: 50 });
 
-    expect(result).toEqual(rows);
-    expect(result[0].permissionCount).toBe(5);
+    expect(result.data).toEqual(rows);
+    expect(result.total).toBe(1);
+    expect(result.page).toBe(1);
+    expect(result.data[0].permissionCount).toBe(5);
   });
 });
 
@@ -227,69 +241,32 @@ describe('removeRole', () => {
 });
 
 describe('hasPermission', () => {
-  it('returns true when user has super_admin role (bypasses check)', async () => {
-    const limit = vi.fn().mockResolvedValue([{ id: ROLE_ID }]);
+  function buildHasPermissionDb(rows: unknown[]) {
+    const limit = vi.fn().mockResolvedValue(rows);
     const where = vi.fn().mockReturnValue({ limit });
-    const innerJoin = vi.fn().mockReturnValue({ where });
+    const leftJoin2 = vi.fn().mockReturnValue({ where });
+    const leftJoin1 = vi.fn().mockReturnValue({ leftJoin: leftJoin2 });
+    const innerJoin = vi.fn().mockReturnValue({ leftJoin: leftJoin1 });
     const from = vi.fn().mockReturnValue({ innerJoin });
-    const db = createMockDb({
+    return createMockDb({
       select: vi.fn().mockReturnValue({ from }),
     });
+  }
 
+  it('returns true when user has super_admin role (bypasses check)', async () => {
+    const db = buildHasPermissionDb([{ roleId: ROLE_ID }]);
     const result = await hasPermission(db, USER_ID, 'users', 'read');
     expect(result).toBe(true);
   });
 
   it('returns true when user has role with matching permission', async () => {
-    const superAdminLimit = vi.fn().mockResolvedValue([]);
-    const superAdminWhere = vi.fn().mockReturnValue({ limit: superAdminLimit });
-    const superAdminJoin = vi.fn().mockReturnValue({ where: superAdminWhere });
-    const superAdminFrom = vi.fn().mockReturnValue({ innerJoin: superAdminJoin });
-
-    const permLimit = vi.fn().mockResolvedValue([{ id: PERM_ID_1 }]);
-    const permWhere = vi.fn().mockReturnValue({ limit: permLimit });
-    const permJoin2 = vi.fn().mockReturnValue({ where: permWhere });
-    const permJoin1 = vi.fn().mockReturnValue({ innerJoin: permJoin2 });
-    const permFrom = vi.fn().mockReturnValue({ innerJoin: permJoin1 });
-
-    let callCount = 0;
-    const db = createMockDb({
-      select: vi.fn().mockImplementation(() => {
-        callCount++;
-        if (callCount === 1) {
-          return { from: superAdminFrom };
-        }
-        return { from: permFrom };
-      }),
-    });
-
+    const db = buildHasPermissionDb([{ roleId: ROLE_ID }]);
     const result = await hasPermission(db, USER_ID, 'users', 'read');
     expect(result).toBe(true);
   });
 
   it('returns false when user has no matching permission', async () => {
-    const superAdminLimit = vi.fn().mockResolvedValue([]);
-    const superAdminWhere = vi.fn().mockReturnValue({ limit: superAdminLimit });
-    const superAdminJoin = vi.fn().mockReturnValue({ where: superAdminWhere });
-    const superAdminFrom = vi.fn().mockReturnValue({ innerJoin: superAdminJoin });
-
-    const permLimit = vi.fn().mockResolvedValue([]);
-    const permWhere = vi.fn().mockReturnValue({ limit: permLimit });
-    const permJoin2 = vi.fn().mockReturnValue({ where: permWhere });
-    const permJoin1 = vi.fn().mockReturnValue({ innerJoin: permJoin2 });
-    const permFrom = vi.fn().mockReturnValue({ innerJoin: permJoin1 });
-
-    let callCount = 0;
-    const db = createMockDb({
-      select: vi.fn().mockImplementation(() => {
-        callCount++;
-        if (callCount === 1) {
-          return { from: superAdminFrom };
-        }
-        return { from: permFrom };
-      }),
-    });
-
+    const db = buildHasPermissionDb([]);
     const result = await hasPermission(db, USER_ID, 'users', 'delete');
     expect(result).toBe(false);
   });

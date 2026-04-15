@@ -3,6 +3,7 @@ import {
   assignRoleSchema,
   createRoleSchema,
   roleIdParamSchema,
+  roleListQuerySchema,
   roleListResponseSchema,
   roleSchema,
   setRolePermissionsSchema,
@@ -103,11 +104,12 @@ export const adminRoutes: FastifyPluginAsyncZod = async (fastify) => {
     {
       preHandler: fastify.requirePermission('roles', 'read'),
       schema: {
+        querystring: roleListQuerySchema,
         response: { 200: roleListResponseSchema },
       },
     },
-    async () => {
-      return listRoles(db);
+    async (request) => {
+      return listRoles(db, request.query);
     },
   );
 
