@@ -1,9 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
-
 import { UnauthorizedError } from '@identity-starter/core';
-import type { Database } from '@identity-starter/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js';
+import { createMockDb } from '../../../test/mock-db.js';
 import {
   createRefreshToken,
   createRefreshTokenService,
@@ -52,7 +51,7 @@ describe('refresh token service (unit)', () => {
       events.push({ eventName: e.eventName, payload: e.payload });
     });
 
-    const db = { insert } as unknown as Database;
+    const db = createMockDb({ insert });
     const params = buildCreateRefreshTokenParams();
 
     const plaintext = fixed.toString('base64url');
@@ -82,7 +81,7 @@ describe('refresh token service (unit)', () => {
     const values = vi.fn().mockResolvedValue(undefined);
     const insert = vi.fn().mockReturnValue({ values });
 
-    const db = { insert } as unknown as Database;
+    const db = createMockDb({ insert });
     const params = buildCreateRefreshTokenParams({ dpopJkt: 'bound-jkt-value' });
 
     await createRefreshToken(db, eventBus, params);
@@ -140,7 +139,7 @@ describe('refresh token service (unit)', () => {
       });
     });
 
-    const db = { select: outerSelect, transaction } as unknown as Database;
+    const db = createMockDb({ select: outerSelect, transaction });
 
     const events: string[] = [];
     eventBus.subscribe(TOKEN_EVENTS.REFRESH_REVOKED, () => {
@@ -217,7 +216,7 @@ describe('refresh token service (unit)', () => {
       });
     });
 
-    const db = { select: outerSelect, transaction } as unknown as Database;
+    const db = createMockDb({ select: outerSelect, transaction });
 
     const newPlain = await rotateRefreshToken(db, eventBus, oldPlain, 10, boundJkt);
 
@@ -253,7 +252,7 @@ describe('refresh token service (unit)', () => {
     const fromSel = vi.fn().mockReturnValue({ where: whereSel });
     const select = vi.fn().mockReturnValue({ from: fromSel });
 
-    const db = { select } as unknown as Database;
+    const db = createMockDb({ select });
 
     await expect(rotateRefreshToken(db, eventBus, oldPlain, 10, 'wrong-jkt')).rejects.toSatisfy(
       (err: unknown) => err instanceof UnauthorizedError && err.message === 'DPoP binding mismatch',
@@ -288,7 +287,7 @@ describe('refresh token service (unit)', () => {
     const set = vi.fn().mockReturnValue({ where: whereUp });
     const update = vi.fn().mockReturnValue({ set });
 
-    const db = { select, update } as unknown as Database;
+    const db = createMockDb({ select, update });
 
     const familyEvents: unknown[] = [];
     eventBus.subscribe(TOKEN_EVENTS.REFRESH_FAMILY_REVOKED, (e) => {
@@ -370,7 +369,7 @@ describe('refresh token service (unit)', () => {
       });
     });
 
-    const db = { select: outerSelect, transaction } as unknown as Database;
+    const db = createMockDb({ select: outerSelect, transaction });
 
     const familyEvents: unknown[] = [];
     eventBus.subscribe(TOKEN_EVENTS.REFRESH_FAMILY_REVOKED, (e) => {
@@ -403,7 +402,7 @@ describe('refresh token service (unit)', () => {
     const set = vi.fn().mockReturnValue({ where: whereUp });
     const update = vi.fn().mockReturnValue({ set });
 
-    const db = { update } as unknown as Database;
+    const db = createMockDb({ update });
 
     const events: unknown[] = [];
     eventBus.subscribe(TOKEN_EVENTS.REFRESH_REVOKED, (e) => {
@@ -423,7 +422,7 @@ describe('refresh token service (unit)', () => {
     const set = vi.fn().mockReturnValue({ where: whereUp });
     const update = vi.fn().mockReturnValue({ set });
 
-    const db = { update } as unknown as Database;
+    const db = createMockDb({ update });
 
     const events: unknown[] = [];
     eventBus.subscribe(TOKEN_EVENTS.REFRESH_REVOKED, (e) => {
@@ -443,7 +442,7 @@ describe('refresh token service (unit)', () => {
 
     const values = vi.fn().mockResolvedValue(undefined);
     const insert = vi.fn().mockReturnValue({ values });
-    const db = { insert } as unknown as Database;
+    const db = createMockDb({ insert });
 
     const service = createRefreshTokenService({ db, eventBus });
     const params = buildCreateRefreshTokenParams();

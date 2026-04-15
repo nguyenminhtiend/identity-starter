@@ -2,6 +2,7 @@ import { NotFoundError, ValidationError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
+import { createMockDb } from '../../../test/mock-db.js';
 import { ADMIN_EVENTS } from '../admin.events.js';
 import {
   bulkRevokeSessions,
@@ -38,11 +39,11 @@ function mockChain() {
 }
 
 function makeDb(): Database {
-  return {
+  return createMockDb({
     select: mocks.select,
     update: mocks.update,
     delete: mocks.delete,
-  } as unknown as Database;
+  });
 }
 
 let db: Database;

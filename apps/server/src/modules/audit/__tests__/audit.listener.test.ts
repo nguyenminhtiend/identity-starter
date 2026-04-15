@@ -1,6 +1,6 @@
-import type { Database } from '@identity-starter/db';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js';
+import { createMockDb } from '../../../test/mock-db.js';
 
 const mocks = vi.hoisted(() => ({
   createAuditLog: vi.fn().mockResolvedValue({}),
@@ -14,7 +14,7 @@ import { registerAuditListener } from '../audit.listener.js';
 
 describe('audit listener', () => {
   let eventBus: InMemoryEventBus;
-  const db = {} as unknown as Database;
+  const db = createMockDb({});
 
   beforeEach(() => {
     eventBus = new InMemoryEventBus();

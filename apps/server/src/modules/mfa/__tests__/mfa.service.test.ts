@@ -5,11 +5,11 @@ import {
   UnauthorizedError,
   ValidationError,
 } from '@identity-starter/core';
-import type { Database } from '@identity-starter/db';
 import * as OTPAuth from 'otpauth';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encrypt } from '../../../core/crypto.js';
 import { type DomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js';
+import { createMockDb, selectChain, selectFromWhereRows } from '../../../test/mock-db.js';
 import { MFA_EVENTS } from '../mfa.events.js';
 
 vi.stubEnv('DATABASE_URL', 'postgresql://127.0.0.1:5432/unit_test');
@@ -72,23 +72,6 @@ function userRow() {
   };
 }
 
-function selectChain(rows: unknown[]) {
-  return {
-    from: vi.fn().mockReturnThis(),
-    where: vi.fn().mockReturnThis(),
-    limit: vi.fn().mockResolvedValue(rows),
-  };
-}
-
-/** `select().from().where()` without `.limit()` (returns array). */
-function selectFromWhereRows(rows: unknown[]) {
-  return {
-    from: vi.fn().mockReturnValue({
-      where: vi.fn().mockResolvedValue(rows),
-    }),
-  };
-}
-
 afterEach(() => {
   mockEnvState.TOTP_ENCRYPTION_KEY = 'a'.repeat(64);
 });
@@ -107,38 +90,38 @@ describe('generateRecoveryCodesRaw', () => {
 describe('enrollTotp', () => {
   it('throws ValidationError when TOTP_ENCRYPTION_KEY is missing', async () => {
     mockEnvState.TOTP_ENCRYPTION_KEY = undefined;
-    const db = {} as unknown as Database;
+    const db = createMockDb({});
     await expect(enrollTotp(db, userId)).rejects.toThrow(ValidationError);
   });
 
   it('throws NotFoundError when user is missing', async () => {
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue(selectChain([])),
-    } as unknown as Database;
+    });
     await expect(enrollTotp(db, userId)).rejects.toThrow(NotFoundError);
   });
 
   it('throws ConflictError when verified TOTP already exists', async () => {
-    const db = {
+    const db = createMockDb({
       select: vi
         .fn()
         .mockReturnValueOnce(selectChain([userRow()]))
         .mockReturnValueOnce(selectChain([{ id: 'existing' }])),
-    } as unknown as Database;
+    });
     await expect(enrollTotp(db, userId)).rejects.toThrow(ConflictError);
   });
 
   it('deletes unverified secrets, inserts TOTP and recovery rows on success', async () => {
     const valuesSpy = vi.fn().mockResolvedValue(undefined);
     const deleteWhere = vi.fn().mockResolvedValue(undefined);
-    const db = {
+    const db = createMockDb({
       select: vi
         .fn()
         .mockReturnValueOnce(selectChain([userRow()]))
         .mockReturnValueOnce(selectChain([])),
       delete: vi.fn().mockReturnValue({ where: deleteWhere }),
       insert: vi.fn().mockReturnValue({ values: valuesSpy }),
-    } as unknown as Database;
+    });
 
     const result = await enrollTotp(db, userId);
 
@@ -163,9 +146,9 @@ describe('enrollTotp', () => {
 
 describe('verifyTotpEnrollment', () => {
   it('throws NotFoundError when no unverified secret', async () => {
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue(selectChain([])),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
     await expect(verifyTotpEnrollment(db, eventBus, userId, '123456')).rejects.toThrow(
       NotFoundError,
@@ -175,7 +158,7 @@ describe('verifyTotpEnrollment', () => {
   it('throws UnauthorizedError on invalid OTP', async () => {
     const secret = new OTPAuth.Secret({ size: 20 });
     const enc = encrypt(secret.hex, mockEnvState.TOTP_ENCRYPTION_KEY ?? '');
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue(
         selectChain([
           {
@@ -192,7 +175,7 @@ describe('verifyTotpEnrollment', () => {
           where: vi.fn().mockResolvedValue(undefined),
         }),
       }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
 
     await expect(verifyTotpEnrollment(db, eventBus, userId, '000000')).rejects.toThrow(
@@ -214,7 +197,7 @@ describe('verifyTotpEnrollment', () => {
     const otp = totp.generate();
 
     const whereSpy = vi.fn().mockResolvedValue(undefined);
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue(
         selectChain([
           {
@@ -231,7 +214,7 @@ describe('verifyTotpEnrollment', () => {
           where: whereSpy,
         }),
       }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
     const events: string[] = [];
     eventBus.subscribe(MFA_EVENTS.TOTP_ENROLLED, () => {
@@ -252,10 +235,10 @@ describe('disableTotp', () => {
 
   it('throws UnauthorizedError when password is wrong', async () => {
     mockVerifyPassword.mockResolvedValue(false);
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue(selectChain([{ id: userId, passwordHash: '$argon2$hash' }])),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
 
     await expect(disableTotp(db, eventBus, userId, 'wrong')).rejects.toThrow(UnauthorizedError);
@@ -265,10 +248,10 @@ describe('disableTotp', () => {
   it('deletes secrets and codes and emits when password valid', async () => {
     mockVerifyPassword.mockResolvedValue(true);
     const deleteWhere = vi.fn().mockResolvedValue(undefined);
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue(selectChain([{ id: userId, passwordHash: '$argon2$hash' }])),
       delete: vi.fn().mockReturnValue({ where: deleteWhere }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
     const names: string[] = [];
     eventBus.subscribe(MFA_EVENTS.TOTP_DISABLED, () => {
@@ -290,14 +273,14 @@ describe('regenerateRecoveryCodes', () => {
 
   it('throws ValidationError when verified TOTP missing', async () => {
     mockVerifyPassword.mockResolvedValue(true);
-    const db = {
+    const db = createMockDb({
       select: vi
         .fn()
         .mockReturnValueOnce(selectChain([{ id: userId, passwordHash: '$h' }]))
         .mockReturnValueOnce(selectChain([])),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       insert: vi.fn().mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
 
     await expect(regenerateRecoveryCodes(db, eventBus, userId, 'pw')).rejects.toThrow(
@@ -308,14 +291,14 @@ describe('regenerateRecoveryCodes', () => {
   it('replaces codes and emits when TOTP enrolled', async () => {
     mockVerifyPassword.mockResolvedValue(true);
     const valuesSpy = vi.fn().mockResolvedValue(undefined);
-    const db = {
+    const db = createMockDb({
       select: vi
         .fn()
         .mockReturnValueOnce(selectChain([{ id: userId, passwordHash: '$h' }]))
         .mockReturnValueOnce(selectChain([{ id: 'totp' }])),
       delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
       insert: vi.fn().mockReturnValue({ values: valuesSpy }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
     const names: string[] = [];
     eventBus.subscribe(MFA_EVENTS.RECOVERY_CODES_GENERATED, () => {
@@ -338,16 +321,16 @@ describe('regenerateRecoveryCodes', () => {
 
 describe('checkMfaEnrolled', () => {
   it('returns false when no verified row', async () => {
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue(selectChain([])),
-    } as unknown as Database;
+    });
     await expect(checkMfaEnrolled(db, userId)).resolves.toBe(false);
   });
 
   it('returns true when verified row exists', async () => {
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue(selectChain([{ id: 't' }])),
-    } as unknown as Database;
+    });
     await expect(checkMfaEnrolled(db, userId)).resolves.toBe(true);
   });
 });
@@ -358,7 +341,7 @@ describe('verifyMfaChallenge', () => {
   });
 
   it('throws ValidationError when both otp and recoveryCode provided', async () => {
-    const db = {} as unknown as Database;
+    const db = createMockDb({});
     const eventBus = new InMemoryEventBus();
     await expect(
       verifyMfaChallenge(
@@ -371,7 +354,7 @@ describe('verifyMfaChallenge', () => {
   });
 
   it('throws ValidationError when neither otp nor recoveryCode provided', async () => {
-    const db = {} as unknown as Database;
+    const db = createMockDb({});
     const eventBus = new InMemoryEventBus();
     await expect(verifyMfaChallenge(db, eventBus, { mfaToken: 't' }, {})).rejects.toThrow(
       ValidationError,
@@ -379,9 +362,9 @@ describe('verifyMfaChallenge', () => {
   });
 
   it('throws UnauthorizedError when challenge missing or expired', async () => {
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue(selectChain([])),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
     await expect(
       verifyMfaChallenge(db, eventBus, { mfaToken: 'bad', otp: '123456' }, {}),
@@ -391,7 +374,7 @@ describe('verifyMfaChallenge', () => {
   it('throws UnauthorizedError on invalid OTP', async () => {
     const secret = new OTPAuth.Secret({ size: 20 });
     const enc = encrypt(secret.hex, mockEnvState.TOTP_ENCRYPTION_KEY ?? '');
-    const db = {
+    const db = createMockDb({
       select: vi
         .fn()
         .mockReturnValueOnce(
@@ -422,7 +405,7 @@ describe('verifyMfaChallenge', () => {
           where: vi.fn().mockResolvedValue(undefined),
         }),
       }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
 
     await expect(
@@ -444,7 +427,7 @@ describe('verifyMfaChallenge', () => {
     });
     const otp = totp.generate();
 
-    const db = {
+    const db = createMockDb({
       select: vi
         .fn()
         .mockReturnValueOnce(
@@ -476,7 +459,7 @@ describe('verifyMfaChallenge', () => {
           where: vi.fn().mockResolvedValue(undefined),
         }),
       }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
     const verified: string[] = [];
     eventBus.subscribe(MFA_EVENTS.TOTP_VERIFIED, () => {
@@ -502,7 +485,7 @@ describe('verifyMfaChallenge', () => {
       .update(recoveryCode)
       .digest('hex');
 
-    const db = {
+    const db = createMockDb({
       select: vi
         .fn()
         .mockReturnValueOnce(
@@ -530,7 +513,7 @@ describe('verifyMfaChallenge', () => {
           where: vi.fn().mockResolvedValue(undefined),
         }),
       }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
     const publishSpy = vi.spyOn(eventBus, 'publish');
 

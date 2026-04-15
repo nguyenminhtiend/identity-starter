@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 import { ConflictError, NotFoundError } from '@identity-starter/core';
-import type { Database } from '@identity-starter/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
+import { createMockDb } from '../../../test/mock-db.js';
 import { CLIENT_EVENTS } from '../client.events.js';
 import {
   authenticateClient,
@@ -64,7 +64,7 @@ describe('createClient', () => {
     const returning = vi.fn();
     const values = vi.fn().mockReturnValue({ returning });
     const insert = vi.fn().mockReturnValue({ values });
-    const db = { insert } as unknown as Database;
+    const db = createMockDb({ insert });
     const eventBus = new InMemoryEventBus();
     const publishSpy = vi.spyOn(eventBus, 'publish');
 
@@ -102,7 +102,7 @@ describe('createClient', () => {
     const returning = vi.fn().mockRejectedValue(err);
     const values = vi.fn().mockReturnValue({ returning });
     const insert = vi.fn().mockReturnValue({ values });
-    const db = { insert } as unknown as Database;
+    const db = createMockDb({ insert });
     const eventBus = new InMemoryEventBus();
 
     await expect(createClient(db, eventBus, buildCreateClientInput())).rejects.toThrow(
@@ -116,9 +116,9 @@ describe('listClients', () => {
     const r1 = oauthClientRow({ id: '11111111-1111-1111-1111-111111111111', clientId: 'aaa' });
     const r2 = oauthClientRow({ id: '22222222-2222-2222-2222-222222222222', clientId: 'bbb' });
     const from = vi.fn().mockResolvedValue([r1, r2]);
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     const list = await listClients(db);
     expect(list).toHaveLength(2);
@@ -133,9 +133,9 @@ describe('getClient', () => {
     const limit = vi.fn().mockResolvedValue([row]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     const client = await getClient(db, row.id);
     expect(client.id).toBe(row.id);
@@ -146,9 +146,9 @@ describe('getClient', () => {
     const limit = vi.fn().mockResolvedValue([]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     await expect(getClient(db, '00000000-0000-0000-0000-000000000000')).rejects.toThrow(
       NotFoundError,
@@ -162,9 +162,9 @@ describe('getClientByClientId', () => {
     const limit = vi.fn().mockResolvedValue([row]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     const client = await getClientByClientId(db, 'public-oauth-id');
     expect(client.clientId).toBe('public-oauth-id');
@@ -175,9 +175,9 @@ describe('getClientByClientId', () => {
     const limit = vi.fn().mockResolvedValue([]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     await expect(getClientByClientId(db, 'missing')).rejects.toThrow(NotFoundError);
   });
@@ -190,7 +190,7 @@ describe('updateClient', () => {
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });
     const update = vi.fn().mockReturnValue({ set });
-    const db = { update } as unknown as Database;
+    const db = createMockDb({ update });
     const eventBus = new InMemoryEventBus();
     const publishSpy = vi.spyOn(eventBus, 'publish');
 
@@ -207,7 +207,7 @@ describe('updateClient', () => {
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });
     const update = vi.fn().mockReturnValue({ set });
-    const db = { update } as unknown as Database;
+    const db = createMockDb({ update });
     const eventBus = new InMemoryEventBus();
 
     await expect(
@@ -221,7 +221,7 @@ describe('deleteClient', () => {
     const returning = vi.fn().mockResolvedValue([{ id: '550e8400-e29b-41d4-a716-446655440000' }]);
     const where = vi.fn().mockReturnValue({ returning });
     const del = vi.fn().mockReturnValue({ where });
-    const db = { delete: del } as unknown as Database;
+    const db = createMockDb({ delete: del });
     const eventBus = new InMemoryEventBus();
     const publishSpy = vi.spyOn(eventBus, 'publish');
 
@@ -236,7 +236,7 @@ describe('deleteClient', () => {
     const returning = vi.fn().mockResolvedValue([]);
     const where = vi.fn().mockReturnValue({ returning });
     const del = vi.fn().mockReturnValue({ where });
-    const db = { delete: del } as unknown as Database;
+    const db = createMockDb({ delete: del });
     const eventBus = new InMemoryEventBus();
 
     await expect(
@@ -262,7 +262,7 @@ describe('rotateSecret', () => {
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });
     const update = vi.fn().mockReturnValue({ set });
-    const db = { update } as unknown as Database;
+    const db = createMockDb({ update });
     const eventBus = new InMemoryEventBus();
     const publishSpy = vi.spyOn(eventBus, 'publish');
 
@@ -283,7 +283,7 @@ describe('rotateSecret', () => {
     const where = vi.fn().mockReturnValue({ returning });
     const set = vi.fn().mockReturnValue({ where });
     const update = vi.fn().mockReturnValue({ set });
-    const db = { update } as unknown as Database;
+    const db = createMockDb({ update });
     const eventBus = new InMemoryEventBus();
 
     await expect(
@@ -301,9 +301,9 @@ describe('authenticateClient', () => {
     const limit = vi.fn().mockResolvedValue([]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     await expect(authenticateClient(db, 'missing', 'secret')).resolves.toBeNull();
     expect(mockVerifyPassword).not.toHaveBeenCalled();
@@ -317,9 +317,9 @@ describe('authenticateClient', () => {
     const limit = vi.fn().mockResolvedValue([row]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     await expect(authenticateClient(db, row.clientId, 'any')).resolves.toBeNull();
     expect(mockVerifyPassword).not.toHaveBeenCalled();
@@ -334,9 +334,9 @@ describe('authenticateClient', () => {
     const limit = vi.fn().mockResolvedValue([row]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     await expect(authenticateClient(db, row.clientId, 'wrong')).resolves.toBeNull();
     expect(mockVerifyPassword).toHaveBeenCalledWith('stored-hash', 'wrong');
@@ -351,9 +351,9 @@ describe('authenticateClient', () => {
     const limit = vi.fn().mockResolvedValue([row]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     const client = await authenticateClient(db, row.clientId, 'good');
     expect(client).not.toBeNull();
@@ -370,9 +370,9 @@ describe('authenticateClient', () => {
     const limit = vi.fn().mockResolvedValue([row]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     const client = await authenticateClient(db, row.clientId, 'posted-secret');
     expect(client).not.toBeNull();
@@ -386,9 +386,9 @@ describe('createClientService', () => {
     const limit = vi.fn().mockResolvedValue([row]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
 
     const svc = createClientService({ db, eventBus });

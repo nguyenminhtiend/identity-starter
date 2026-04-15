@@ -1,9 +1,9 @@
 import { ForbiddenError, UnauthorizedError } from '@identity-starter/core';
-import type { Database } from '@identity-starter/db';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
+import { createMockDb } from '../../../test/mock-db.js';
 import type { Container } from '../../container-plugin.js';
 import { containerPlugin } from '../../container-plugin.js';
 import { errorHandlerPlugin } from '../error-handler.js';
@@ -19,7 +19,7 @@ vi.mock('../../../modules/rbac/rbac.service.js', () => ({
 
 describe('rbacPlugin requirePermission', () => {
   const userId = '550e8400-e29b-41d4-a716-446655440000';
-  const dummyDb = {} as unknown as Database;
+  const dummyDb = createMockDb({});
 
   function bearerRequest(): FastifyRequest {
     return {

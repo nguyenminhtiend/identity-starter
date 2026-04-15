@@ -1,7 +1,7 @@
 import { UnauthorizedError } from '@identity-starter/core';
-import type { Database } from '@identity-starter/db';
 import { describe, expect, it, vi } from 'vitest';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
+import { createMockDb } from '../../../test/mock-db.js';
 import { AUTH_EVENTS } from '../auth.events.js';
 import { requestPasswordReset, resetPassword } from '../password-reset.service.js';
 
@@ -18,14 +18,14 @@ vi.mock('../../session/session.service.js', () => ({
 
 describe('requestPasswordReset', () => {
   it('returns null when user is not found', async () => {
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
         limit: vi.fn().mockResolvedValue([]),
       }),
       insert: vi.fn(),
-    } as unknown as Database;
+    });
 
     const eventBus = new InMemoryEventBus();
     const publishSpy = vi.spyOn(eventBus, 'publish');
@@ -43,10 +43,10 @@ describe('requestPasswordReset', () => {
       email: 'u@example.com',
     };
 
-    const db = {
+    const db = createMockDb({
       select: vi.fn(),
       insert: vi.fn(),
-    } as unknown as Database;
+    });
 
     vi.mocked(db.select)
       .mockReturnValueOnce({
@@ -77,10 +77,10 @@ describe('requestPasswordReset', () => {
     };
 
     const values = vi.fn().mockResolvedValue(undefined);
-    const db = {
+    const db = createMockDb({
       select: vi.fn(),
       insert: vi.fn().mockReturnValue({ values }),
-    } as unknown as Database;
+    });
 
     vi.mocked(db.select)
       .mockReturnValueOnce({
@@ -125,14 +125,14 @@ describe('resetPassword', () => {
     mockHashPassword.mockReset();
     mockRevokeAllUserSessions.mockReset();
 
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
         limit: vi.fn().mockResolvedValue([]),
       }),
       update: vi.fn(),
-    } as unknown as Database;
+    });
 
     const eventBus = new InMemoryEventBus();
 
@@ -173,7 +173,7 @@ describe('resetPassword', () => {
         where: tokenUpdateWhere,
       });
 
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
@@ -182,7 +182,7 @@ describe('resetPassword', () => {
       transaction: vi.fn(async (fn: (tx: { update: typeof txUpdate }) => Promise<void>) => {
         await fn({ update: txUpdate });
       }),
-    } as unknown as Database;
+    });
 
     const eventBus = new InMemoryEventBus();
     const completed: unknown[] = [];

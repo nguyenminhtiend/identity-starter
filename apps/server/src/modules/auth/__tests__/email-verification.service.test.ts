@@ -1,7 +1,7 @@
 import { UnauthorizedError } from '@identity-starter/core';
-import type { Database } from '@identity-starter/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
+import { createMockDb } from '../../../test/mock-db.js';
 import { AUTH_EVENTS } from '../auth.events.js';
 import { verifyEmail } from '../email-verification.service.js';
 
@@ -22,7 +22,7 @@ describe('verifyEmail (unit)', () => {
     const from = vi.fn().mockReturnValue({ where });
     const select = vi.fn().mockReturnValue({ from });
 
-    const db = { select } as unknown as Database;
+    const db = createMockDb({ select });
 
     await expect(verifyEmail(db, eventBus, 'missing')).rejects.toThrow(UnauthorizedError);
   });
@@ -41,7 +41,7 @@ describe('verifyEmail (unit)', () => {
     const from = vi.fn().mockReturnValue({ where });
     const select = vi.fn().mockReturnValue({ from });
 
-    const db = { select } as unknown as Database;
+    const db = createMockDb({ select });
 
     await expect(verifyEmail(db, eventBus, 't')).rejects.toThrow(UnauthorizedError);
   });
@@ -60,7 +60,7 @@ describe('verifyEmail (unit)', () => {
     const from = vi.fn().mockReturnValue({ where });
     const select = vi.fn().mockReturnValue({ from });
 
-    const db = { select } as unknown as Database;
+    const db = createMockDb({ select });
 
     await expect(verifyEmail(db, eventBus, 't')).rejects.toThrow(UnauthorizedError);
   });
@@ -89,7 +89,7 @@ describe('verifyEmail (unit)', () => {
       await fn(tx);
     });
 
-    const db = { select, transaction } as unknown as Database;
+    const db = createMockDb({ select, transaction });
 
     await expect(verifyEmail(db, eventBus, 't')).rejects.toThrow(UnauthorizedError);
   });
@@ -147,7 +147,7 @@ describe('verifyEmail (unit)', () => {
       await fn(tx);
     });
 
-    const db = { select: selectOuter, transaction } as unknown as Database;
+    const db = createMockDb({ select: selectOuter, transaction });
 
     await verifyEmail(db, eventBus, 'raw-token');
 

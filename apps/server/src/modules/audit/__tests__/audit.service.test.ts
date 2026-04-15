@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Database } from '@identity-starter/db';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMockDb } from '../../../test/mock-db.js';
 import { createAuditLog, exportAuditLogs, queryAuditLogs } from '../audit.service.js';
 import { makeCreateAuditLogInput } from './audit.factory.js';
 
@@ -33,10 +34,10 @@ function resetChain() {
 }
 
 function makeDb(): Database {
-  return {
+  return createMockDb({
     select: mocks.select,
     insert: mocks.insert,
-  } as unknown as Database;
+  });
 }
 
 let db: Database;

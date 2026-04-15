@@ -1,6 +1,6 @@
-import type { Database } from '@identity-starter/db';
 import * as jose from 'jose';
 import { describe, expect, it, vi } from 'vitest';
+import { createMockDb } from '../../../test/mock-db.js';
 import { createSigningKeyService } from '../signing-key.service.js';
 
 function mockSelectChain(rows: unknown[]) {
@@ -42,9 +42,9 @@ describe('createSigningKeyService', () => {
         inserted = v;
         return { returning };
       });
-      const db = {
+      const db = createMockDb({
         insert: vi.fn().mockReturnValue({ values }),
-      } as unknown as Database;
+      });
 
       const service = createSigningKeyService({ db });
       const result = await service.generateKeyPair();
@@ -87,10 +87,10 @@ describe('createSigningKeyService', () => {
       };
 
       const { select } = mockSelectChain([row]);
-      const db = {
+      const db = createMockDb({
         select,
         insert: vi.fn(),
-      } as unknown as Database;
+      });
 
       const service = createSigningKeyService({ db });
       const result = await service.getActiveSigningKey();
@@ -122,10 +122,10 @@ describe('createSigningKeyService', () => {
         inserted = v;
         return { returning };
       });
-      const db = {
+      const db = createMockDb({
         select,
         insert: vi.fn().mockReturnValue({ values }),
-      } as unknown as Database;
+      });
 
       const service = createSigningKeyService({ db });
       const result = await service.getActiveSigningKey();
@@ -160,10 +160,10 @@ describe('createSigningKeyService', () => {
       const from = vi.fn().mockReturnValue({ where });
       const select = vi.fn().mockReturnValue({ from });
 
-      const db = {
+      const db = createMockDb({
         select,
         insert: vi.fn(),
-      } as unknown as Database;
+      });
 
       const service = createSigningKeyService({ db });
       const first = await service.getActiveSigningKey();
@@ -189,7 +189,7 @@ describe('createSigningKeyService', () => {
       ];
 
       const { select } = mockSelectChainJwks(rows);
-      const db = { select } as unknown as Database;
+      const db = createMockDb({ select });
 
       const service = createSigningKeyService({ db });
       const jwks = await service.getJwks();
@@ -231,10 +231,10 @@ describe('createSigningKeyService', () => {
       });
       const insert = vi.fn().mockReturnValue({ values });
 
-      const db = {
+      const db = createMockDb({
         update,
         insert,
-      } as unknown as Database;
+      });
 
       const service = createSigningKeyService({ db });
       await service.rotateKey();

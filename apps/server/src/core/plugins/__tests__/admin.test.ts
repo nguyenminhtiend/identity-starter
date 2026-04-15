@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import Fastify from 'fastify';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
+import { createMockDb } from '../../../test/mock-db.js';
 import type { Container } from '../../container-plugin.js';
 import { containerPlugin } from '../../container-plugin.js';
 import { adminPlugin } from '../admin.js';
@@ -25,7 +26,7 @@ function makeMockDb(isAdmin: boolean): Database {
       }),
     }),
   });
-  return { select } as unknown as Database;
+  return createMockDb({ select });
 }
 
 describe('adminPlugin requireAdmin', () => {

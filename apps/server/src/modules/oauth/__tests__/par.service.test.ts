@@ -1,5 +1,5 @@
-import type { Database } from '@identity-starter/db';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMockDb } from '../../../test/mock-db.js';
 import { createParRequest, type ParRequestParams, readParRequest } from '../par.service.js';
 
 const randomBytesMock = vi.hoisted(() => vi.fn(() => Buffer.alloc(32, 7)));
@@ -32,7 +32,7 @@ describe('par.service', () => {
     it('stores params and returns request_uri with urn prefix and expires_in', async () => {
       const insertValues = vi.fn().mockResolvedValue(undefined);
       const insert = vi.fn().mockReturnValue({ values: insertValues });
-      const db = { insert } as unknown as Database;
+      const db = createMockDb({ insert });
 
       const result = await createParRequest(db, clientInternalId, params, 60);
 
@@ -72,7 +72,7 @@ describe('par.service', () => {
       const select = vi.fn().mockReturnValue({ from });
 
       const update = vi.fn();
-      const db = { select, update } as unknown as Database;
+      const db = createMockDb({ select, update });
 
       const out = await readParRequest(db, requestUri, clientInternalId);
 
@@ -94,10 +94,10 @@ describe('par.service', () => {
       const limit = vi.fn().mockResolvedValue([row]);
       const whereSelect = vi.fn().mockReturnValue({ limit });
       const from = vi.fn().mockReturnValue({ where: whereSelect });
-      const db = {
+      const db = createMockDb({
         select: vi.fn().mockReturnValue({ from }),
         update: vi.fn(),
-      } as unknown as Database;
+      });
 
       await expect(readParRequest(db, requestUri, clientInternalId)).rejects.toMatchObject({
         message: 'PAR request expired',
@@ -118,10 +118,10 @@ describe('par.service', () => {
       const limit = vi.fn().mockResolvedValue([row]);
       const whereSelect = vi.fn().mockReturnValue({ limit });
       const from = vi.fn().mockReturnValue({ where: whereSelect });
-      const db = {
+      const db = createMockDb({
         select: vi.fn().mockReturnValue({ from }),
         update: vi.fn(),
-      } as unknown as Database;
+      });
 
       await expect(readParRequest(db, requestUri, clientInternalId)).rejects.toMatchObject({
         message: 'PAR request already used',
@@ -142,10 +142,10 @@ describe('par.service', () => {
       const limit = vi.fn().mockResolvedValue([row]);
       const whereSelect = vi.fn().mockReturnValue({ limit });
       const from = vi.fn().mockReturnValue({ where: whereSelect });
-      const db = {
+      const db = createMockDb({
         select: vi.fn().mockReturnValue({ from }),
         update: vi.fn(),
-      } as unknown as Database;
+      });
 
       await expect(
         readParRequest(db, requestUri, '99999999-9999-7999-8999-999999999999'),
@@ -158,10 +158,10 @@ describe('par.service', () => {
       const limit = vi.fn().mockResolvedValue([]);
       const whereSelect = vi.fn().mockReturnValue({ limit });
       const from = vi.fn().mockReturnValue({ where: whereSelect });
-      const db = {
+      const db = createMockDb({
         select: vi.fn().mockReturnValue({ from }),
         update: vi.fn(),
-      } as unknown as Database;
+      });
 
       await expect(readParRequest(db, requestUri, clientInternalId)).rejects.toMatchObject({
         message: 'Invalid request_uri',

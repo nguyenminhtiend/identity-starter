@@ -2,6 +2,7 @@ import { NotFoundError, ValidationError } from '@identity-starter/core';
 import type { Database } from '@identity-starter/db';
 import { describe, expect, it, vi } from 'vitest';
 import { createDomainEvent, InMemoryEventBus } from '../../../infra/event-bus.js';
+import { createMockDb } from '../../../test/mock-db.js';
 import { ACCOUNT_EVENTS } from '../account.events.js';
 import { getProfile, revokeOwnSession } from '../account.service.js';
 
@@ -37,9 +38,9 @@ describe('getProfile (mocked db)', () => {
     const limit = vi.fn().mockResolvedValue([]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     await expect(getProfile(db, '00000000-0000-0000-0000-000000000000')).rejects.toThrow(
       NotFoundError,
@@ -59,9 +60,9 @@ describe('getProfile (mocked db)', () => {
     const limit = vi.fn().mockResolvedValue([row]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     const profile = await getProfile(db, row.id);
     expect(profile.email).toBe('a@example.com');

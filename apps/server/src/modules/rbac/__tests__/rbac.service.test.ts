@@ -1,7 +1,7 @@
 import { ConflictError, NotFoundError } from '@identity-starter/core';
-import type { Database } from '@identity-starter/db';
 import { describe, expect, it, vi } from 'vitest';
 import { InMemoryEventBus } from '../../../infra/event-bus.js';
+import { createMockDb } from '../../../test/mock-db.js';
 import { RBAC_EVENTS } from '../rbac.events.js';
 import {
   assignRole,
@@ -27,7 +27,7 @@ describe('createRole', () => {
     const returning = vi.fn().mockResolvedValue([row]);
     const values = vi.fn().mockReturnValue({ returning });
     const insert = vi.fn().mockReturnValue({ values });
-    const db = { insert } as unknown as Database;
+    const db = createMockDb({ insert });
     const eventBus = new InMemoryEventBus();
     const publishSpy = vi.spyOn(eventBus, 'publish');
 
@@ -49,7 +49,7 @@ describe('createRole', () => {
     const returning = vi.fn().mockRejectedValue(err);
     const values = vi.fn().mockReturnValue({ returning });
     const insert = vi.fn().mockReturnValue({ values });
-    const db = { insert } as unknown as Database;
+    const db = createMockDb({ insert });
     const eventBus = new InMemoryEventBus();
 
     const input = makeCreateRoleInput({ name: 'admin' });
@@ -73,9 +73,9 @@ describe('listRoles', () => {
     const groupBy = vi.fn().mockReturnValue({ orderBy });
     const leftJoin = vi.fn().mockReturnValue({ groupBy });
     const from = vi.fn().mockReturnValue({ leftJoin });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     const result = await listRoles(db);
 
@@ -94,11 +94,11 @@ describe('setRolePermissions', () => {
 
     const insertValues = vi.fn().mockResolvedValue(undefined);
 
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from: selectFrom }),
       delete: vi.fn().mockReturnValue({ where: deleteWhere }),
       insert: vi.fn().mockReturnValue({ values: insertValues }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
     const publishSpy = vi.spyOn(eventBus, 'publish');
 
@@ -116,9 +116,9 @@ describe('setRolePermissions', () => {
     const selectWhere = vi.fn().mockResolvedValue(existingPerms);
     const selectFrom = vi.fn().mockReturnValue({ where: selectWhere });
 
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from: selectFrom }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
 
     await expect(setRolePermissions(db, eventBus, ROLE_ID, [PERM_ID_1, PERM_ID_2])).rejects.toThrow(
@@ -135,10 +135,10 @@ describe('assignRole', () => {
 
     const insertValues = vi.fn().mockResolvedValue(undefined);
 
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from: selectFrom }),
       insert: vi.fn().mockReturnValue({ values: insertValues }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
     const publishSpy = vi.spyOn(eventBus, 'publish');
 
@@ -163,10 +163,10 @@ describe('assignRole', () => {
     (err as { code: string }).code = '23505';
     const insertValues = vi.fn().mockRejectedValue(err);
 
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from: selectFrom }),
       insert: vi.fn().mockReturnValue({ values: insertValues }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
 
     await expect(assignRole(db, eventBus, USER_ID, ROLE_ID, ASSIGNER_ID)).rejects.toThrow(
@@ -179,9 +179,9 @@ describe('assignRole', () => {
     const selectWhere = vi.fn().mockReturnValue({ limit: selectLimit });
     const selectFrom = vi.fn().mockReturnValue({ where: selectWhere });
 
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from: selectFrom }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
 
     await expect(assignRole(db, eventBus, USER_ID, ROLE_ID, ASSIGNER_ID)).rejects.toThrow(
@@ -194,9 +194,9 @@ describe('removeRole', () => {
   it('deletes user_roles entry', async () => {
     const returning = vi.fn().mockResolvedValue([{ userId: USER_ID }]);
     const deleteWhere = vi.fn().mockReturnValue({ returning });
-    const db = {
+    const db = createMockDb({
       delete: vi.fn().mockReturnValue({ where: deleteWhere }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
     const publishSpy = vi.spyOn(eventBus, 'publish');
 
@@ -215,9 +215,9 @@ describe('removeRole', () => {
   it('throws NotFoundError when not assigned', async () => {
     const returning = vi.fn().mockResolvedValue([]);
     const deleteWhere = vi.fn().mockReturnValue({ returning });
-    const db = {
+    const db = createMockDb({
       delete: vi.fn().mockReturnValue({ where: deleteWhere }),
-    } as unknown as Database;
+    });
     const eventBus = new InMemoryEventBus();
 
     await expect(removeRole(db, eventBus, USER_ID, ROLE_ID, ASSIGNER_ID)).rejects.toThrow(
@@ -232,9 +232,9 @@ describe('hasPermission', () => {
     const where = vi.fn().mockReturnValue({ limit });
     const innerJoin = vi.fn().mockReturnValue({ where });
     const from = vi.fn().mockReturnValue({ innerJoin });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     const result = await hasPermission(db, USER_ID, 'users', 'read');
     expect(result).toBe(true);
@@ -253,7 +253,7 @@ describe('hasPermission', () => {
     const permFrom = vi.fn().mockReturnValue({ innerJoin: permJoin1 });
 
     let callCount = 0;
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
@@ -261,7 +261,7 @@ describe('hasPermission', () => {
         }
         return { from: permFrom };
       }),
-    } as unknown as Database;
+    });
 
     const result = await hasPermission(db, USER_ID, 'users', 'read');
     expect(result).toBe(true);
@@ -280,7 +280,7 @@ describe('hasPermission', () => {
     const permFrom = vi.fn().mockReturnValue({ innerJoin: permJoin1 });
 
     let callCount = 0;
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockImplementation(() => {
         callCount++;
         if (callCount === 1) {
@@ -288,7 +288,7 @@ describe('hasPermission', () => {
         }
         return { from: permFrom };
       }),
-    } as unknown as Database;
+    });
 
     const result = await hasPermission(db, USER_ID, 'users', 'delete');
     expect(result).toBe(false);
@@ -310,9 +310,9 @@ describe('getUserRoles', () => {
     const where = vi.fn().mockResolvedValue(rows);
     const innerJoin = vi.fn().mockReturnValue({ where });
     const from = vi.fn().mockReturnValue({ innerJoin });
-    const db = {
+    const db = createMockDb({
       select: vi.fn().mockReturnValue({ from }),
-    } as unknown as Database;
+    });
 
     const result = await getUserRoles(db, USER_ID);
 
@@ -336,7 +336,7 @@ describe('seedSystemRoles', () => {
     const selectFrom = vi.fn().mockReturnValue({ where: selectWhere });
 
     let selectCallCount = 0;
-    const db = {
+    const db = createMockDb({
       insert: vi.fn().mockReturnValue({ values: insertValues }),
       select: vi.fn().mockImplementation(() => {
         selectCallCount++;
@@ -351,7 +351,7 @@ describe('seedSystemRoles', () => {
           }),
         };
       }),
-    } as unknown as Database;
+    });
 
     await seedSystemRoles(db);
 
@@ -365,7 +365,7 @@ describe('seedSystemRoles', () => {
 
     const adminRole = { id: ROLE_ID };
 
-    const db = {
+    const db = createMockDb({
       insert: vi.fn().mockReturnValue({ values: insertValues }),
       select: vi.fn().mockImplementation(() => ({
         from: vi.fn().mockReturnValue({
@@ -374,7 +374,7 @@ describe('seedSystemRoles', () => {
           }),
         }),
       })),
-    } as unknown as Database;
+    });
 
     await seedSystemRoles(db);
     await seedSystemRoles(db);
