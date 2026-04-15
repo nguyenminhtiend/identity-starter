@@ -1,3 +1,4 @@
+export { baseEnvSchema, webAppEnvSchema } from './env.js';
 export {
   ConflictError,
   DomainError,

@@ -1,11 +1,6 @@
-import { z } from 'zod';
+import { webAppEnvSchema } from '@identity-starter/core';
 
-const envSchema = z.object({
-  API_URL: z.string().default('http://localhost:3001'),
-  NEXT_PUBLIC_APP_NAME: z.string().default('Identity Starter'),
-});
-
-export const env = envSchema.parse({
+export const env = webAppEnvSchema.parse({
   API_URL: process.env.API_URL,
   NEXT_PUBLIC_APP_NAME: process.env.NEXT_PUBLIC_APP_NAME,
 });

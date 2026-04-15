@@ -1,9 +1,7 @@
+import { webAppEnvSchema } from '@identity-starter/core';
 import { z } from 'zod';
 
-const envSchema = z.object({
-  API_URL: z.string().default('http://localhost:3001'),
-  NEXT_PUBLIC_APP_NAME: z.string().default('Identity Admin'),
-
+const envSchema = webAppEnvSchema.extend({
   ADMIN_OAUTH_CLIENT_ID: z.string().default('admin-dashboard'),
   ADMIN_OAUTH_CLIENT_SECRET: z.string().default('admin-dashboard-dev-secret'),
 

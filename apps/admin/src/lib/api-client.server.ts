@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
-import { handleResponse } from './api-client';
+import { handleResponse } from '@/lib/api-client';
 import { createDPoPProof, type DPoPKeyPairJwk } from './dpop';
 import { env } from './env';
 import { decryptTokens, SESSION_COOKIE_NAME, type TokenSet } from './oauth';

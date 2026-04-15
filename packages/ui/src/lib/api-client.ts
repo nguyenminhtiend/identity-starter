@@ -12,7 +12,7 @@ export class ApiRequestError extends Error {
   }
 }
 
-async function handleResponse<T>(response: Response): Promise<T> {
+export async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const body = (await response.json()) as ApiErrorBody;
     throw new ApiRequestError(response.status, body);

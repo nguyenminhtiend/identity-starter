@@ -1,7 +1,7 @@
+import { baseEnvSchema } from '@identity-starter/core';
 import { z } from 'zod';
 
-const EnvSchema = z.object({
-  NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+const EnvSchema = baseEnvSchema.extend({
   PORT: z.coerce.number().default(3001),
   HOST: z.string().default('0.0.0.0'),
   DATABASE_URL: z.url(),

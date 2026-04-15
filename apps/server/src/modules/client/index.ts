@@ -11,6 +11,7 @@ export {
   getClient,
   getClientByClientId,
   listClients,
+  mapToClientResponse,
   rotateSecret,
   updateClient,
 } from './client.service.js';
