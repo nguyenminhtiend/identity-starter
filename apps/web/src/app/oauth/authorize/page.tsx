@@ -9,7 +9,7 @@ interface AuthorizePageProps {
 
 async function fetchConsentData(
   queryString: string,
-): Promise<ConsentRequired | { type: 'redirect'; location: string }> {
+): Promise<ConsentRequired | { type: 'redirect'; location: string } | { type: 'session_expired' }> {
   const cookieStore = await cookies();
   const session = cookieStore.get('session');
   const apiUrl = process.env.API_URL ?? 'http://localhost:3001';

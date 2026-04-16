@@ -1,4 +1,4 @@
-export { baseEnvSchema, webAppEnvSchema } from './env.js';
+export { baseEnvSchema, webAppEnvSchema } from './env';
 export {
   ConflictError,
   DomainError,
@@ -7,5 +7,5 @@ export {
   TooManyRequestsError,
   UnauthorizedError,
   ValidationError,
-} from './errors.js';
-export type { Brand, PaginatedResult, PaginationInput, UserId } from './types.js';
+} from './errors';
+export type { Brand, PaginatedResult, PaginationInput, UserId } from './types';
