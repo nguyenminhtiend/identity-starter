@@ -24,7 +24,7 @@ async function generateDpopKeyPair() {
 }
 
 async function createDpopProof(
-  privateKey: jose.KeyLike,
+  privateKey: jose.CryptoKey,
   publicJwk: jose.JWK,
   method: string,
   url: string,
@@ -191,7 +191,7 @@ async function parAuthorize(
 
 async function tokenExchange(
   app: FastifyInstance,
-  dpopPrivateKey: jose.KeyLike,
+  dpopPrivateKey: jose.CryptoKey,
   dpopPublicJwk: jose.JWK,
   clientId: string,
   clientSecret: string,

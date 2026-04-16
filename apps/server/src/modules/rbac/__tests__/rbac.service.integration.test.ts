@@ -139,11 +139,11 @@ describe('listRoles', () => {
 
     expect(list.data.length).toBeGreaterThanOrEqual(3);
 
-    const admin = list.find((r) => r.name === 'admin');
+    const admin = list.data.find((r) => r.name === 'admin');
     expect(admin).toBeDefined();
     expect(admin?.permissionCount).toBe(5);
 
-    const superAdmin = list.find((r) => r.name === 'super_admin');
+    const superAdmin = list.data.find((r) => r.name === 'super_admin');
     expect(superAdmin).toBeDefined();
     expect(superAdmin?.permissionCount).toBe(0);
   });

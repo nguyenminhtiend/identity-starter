@@ -43,7 +43,6 @@ describe('adminPlugin requireAdmin', () => {
         container: {
           db: makeMockDb(false),
           eventBus: new InMemoryEventBus(),
-          redis: null,
         } satisfies Container,
       });
 
@@ -84,7 +83,6 @@ describe('adminPlugin requireAdmin', () => {
         container: {
           db: makeMockDb(true),
           eventBus: new InMemoryEventBus(),
-          redis: null,
         } satisfies Container,
       });
 
@@ -125,7 +123,6 @@ describe('adminPlugin requireAdmin', () => {
         container: {
           db: makeMockDb(false),
           eventBus: new InMemoryEventBus(),
-          redis: null,
         } satisfies Container,
       });
 

@@ -45,7 +45,7 @@ describe('createRole', () => {
 
   it('throws ConflictError when name already exists', async () => {
     const err = new Error('duplicate');
-    (err as { code: string }).code = '23505';
+    (err as unknown as { code: string }).code = '23505';
     const returning = vi.fn().mockRejectedValue(err);
     const values = vi.fn().mockReturnValue({ returning });
     const insert = vi.fn().mockReturnValue({ values });
@@ -174,7 +174,7 @@ describe('assignRole', () => {
     const selectFrom = vi.fn().mockReturnValue({ where: selectWhere });
 
     const err = new Error('duplicate');
-    (err as { code: string }).code = '23505';
+    (err as unknown as { code: string }).code = '23505';
     const insertValues = vi.fn().mockRejectedValue(err);
 
     const db = createMockDb({

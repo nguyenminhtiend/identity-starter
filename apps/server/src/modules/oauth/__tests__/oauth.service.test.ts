@@ -203,9 +203,10 @@ describe('oauth.service', () => {
       const insertValues = vi.fn().mockResolvedValue(undefined);
       const insert = vi.fn().mockReturnValue({ values: insertValues });
 
+      const selectMock = vi.fn();
       const db = {
         insert,
-        select: vi.fn(),
+        select: selectMock,
       } as never;
 
       const publishSpy = vi.spyOn(eventBus, 'publish');
@@ -226,7 +227,7 @@ describe('oauth.service', () => {
         expect(url.searchParams.get('code')).toBeTruthy();
       }
 
-      expect(db.select).not.toHaveBeenCalled();
+      expect(selectMock).not.toHaveBeenCalled();
       expect(publishSpy).toHaveBeenCalledWith(
         expect.objectContaining({ eventName: OAUTH_EVENTS.AUTHORIZATION_CODE_ISSUED }),
       );

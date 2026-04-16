@@ -15,7 +15,11 @@ import type {
 } from './client.schemas.js';
 
 type SafeRow = typeof oauthClientColumns;
-type SafeRowResult = { [K in keyof SafeRow]: SafeRow[K]['_']['data'] };
+type SafeRowResult = {
+  [K in keyof SafeRow]: SafeRow[K]['_']['notNull'] extends true
+    ? SafeRow[K]['_']['data']
+    : SafeRow[K]['_']['data'] | null;
+};
 
 export function mapToClientResponse(row: SafeRowResult): ClientResponse {
   return {

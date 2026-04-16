@@ -20,7 +20,11 @@ export function createMockDb(overrides: MockDbMethods = {}): Database {
 }
 
 /** Common Drizzle chain shape: `select().from().where().limit()` → rows. */
-export function selectChain(rows: unknown[]) {
+export function selectChain(rows: unknown[]): {
+  from: Mock;
+  where: Mock;
+  limit: Mock;
+} {
   return {
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
@@ -29,7 +33,9 @@ export function selectChain(rows: unknown[]) {
 }
 
 /** `select().from().where()` without `.limit()` (returns rows directly). */
-export function selectFromWhereRows(rows: unknown[]) {
+export function selectFromWhereRows(rows: unknown[]): {
+  from: Mock;
+} {
   return {
     from: vi.fn().mockReturnValue({
       where: vi.fn().mockResolvedValue(rows),

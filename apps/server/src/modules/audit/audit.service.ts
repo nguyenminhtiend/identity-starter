@@ -124,13 +124,18 @@ export async function queryAuditLogs(db: Database, query: AuditLogQuery) {
   const [{ total }] = await db.select({ total: count() }).from(auditLogs).where(where);
 
   const offset = (query.page - 1) * query.limit;
-  const data = await db
+  const rows = await db
     .select()
     .from(auditLogs)
     .where(where)
     .orderBy(desc(auditLogs.createdAt))
     .limit(query.limit)
     .offset(offset);
+
+  const data = rows.map((row) => ({
+    ...row,
+    details: row.details as Record<string, unknown>,
+  }));
 
   return { data, total, page: query.page, limit: query.limit };
 }

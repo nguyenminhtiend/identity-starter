@@ -9,7 +9,7 @@ function computeAthNode(accessToken: string): string {
 }
 
 async function signDpopProof(options: {
-  privateKey: jose.KeyLike;
+  privateKey: jose.CryptoKey;
   publicJwk: jose.JWK;
   payload: Record<string, unknown>;
 }): Promise<string> {

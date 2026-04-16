@@ -41,7 +41,7 @@ describe('refresh token service (unit)', () => {
 
   it('createRefreshToken generates opaque token, stores hash, creates familyId, returns plaintext', async () => {
     const fixed = Buffer.alloc(32, 0xab);
-    vi.mocked(randomBytes).mockReturnValueOnce(fixed);
+    vi.mocked(randomBytes).mockReturnValueOnce(fixed as never);
 
     const values = vi.fn().mockResolvedValue(undefined);
     const insert = vi.fn().mockReturnValue({ values });
@@ -76,7 +76,7 @@ describe('refresh token service (unit)', () => {
 
   it('createRefreshToken stores dpopJkt in the DB insert when provided', async () => {
     const fixed = Buffer.alloc(32, 0xab);
-    vi.mocked(randomBytes).mockReturnValueOnce(fixed);
+    vi.mocked(randomBytes).mockReturnValueOnce(fixed as never);
 
     const values = vi.fn().mockResolvedValue(undefined);
     const insert = vi.fn().mockReturnValue({ values });
@@ -97,7 +97,7 @@ describe('refresh token service (unit)', () => {
     const oldPlain = 'client-presented-refresh';
     const oldHash = hashToken(oldPlain);
     const newBuf = Buffer.alloc(32, 0xcd);
-    vi.mocked(randomBytes).mockReturnValueOnce(newBuf);
+    vi.mocked(randomBytes).mockReturnValueOnce(newBuf as never);
 
     const now = Date.now();
     const validRow = {
@@ -174,7 +174,7 @@ describe('refresh token service (unit)', () => {
     const oldHash = hashToken(oldPlain);
     const boundJkt = 'expected-jkt-thumbprint';
     const newBuf = Buffer.alloc(32, 0xde);
-    vi.mocked(randomBytes).mockReturnValueOnce(newBuf);
+    vi.mocked(randomBytes).mockReturnValueOnce(newBuf as never);
 
     const now = Date.now();
     const validRow = {
@@ -308,7 +308,7 @@ describe('refresh token service (unit)', () => {
     const successorPlain = 'same-successor-plain';
     const successorHash = hashToken(successorPlain);
     const graceBuf = Buffer.alloc(32, 0xef);
-    vi.mocked(randomBytes).mockReturnValueOnce(graceBuf);
+    vi.mocked(randomBytes).mockReturnValueOnce(graceBuf as never);
 
     const revokedAt = new Date();
     const now = Date.now();
@@ -438,7 +438,7 @@ describe('refresh token service (unit)', () => {
 
   it('createRefreshTokenService delegates to underlying functions', async () => {
     const fixed = Buffer.alloc(32, 0x01);
-    vi.mocked(randomBytes).mockReturnValueOnce(fixed);
+    vi.mocked(randomBytes).mockReturnValueOnce(fixed as never);
 
     const values = vi.fn().mockResolvedValue(undefined);
     const insert = vi.fn().mockReturnValue({ values });

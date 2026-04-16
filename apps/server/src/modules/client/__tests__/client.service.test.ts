@@ -98,7 +98,7 @@ describe('createClient', () => {
 
   it('throws ConflictError on unique violation for clientId', async () => {
     const err = new Error('duplicate');
-    (err as { code: string }).code = '23505';
+    (err as unknown as { code: string }).code = '23505';
     const returning = vi.fn().mockRejectedValue(err);
     const values = vi.fn().mockReturnValue({ returning });
     const insert = vi.fn().mockReturnValue({ values });

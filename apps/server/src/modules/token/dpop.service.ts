@@ -7,7 +7,7 @@ const DEFAULT_DPOP_PROOF_MAX_AGE_SECONDS = 300;
 
 const DPOP_JWT_TYP = 'dpop+jwt';
 
-const DPOP_JWS_ALGORITHMS: jose.JWSAlgorithm[] = [
+const DPOP_JWS_ALGORITHMS: string[] = [
   'RS256',
   'RS384',
   'RS512',
@@ -32,16 +32,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function assertDpopHeader(
   header: jose.ProtectedHeaderParameters,
 ): asserts header is jose.ProtectedHeaderParameters & {
-  alg: jose.JWSAlgorithm;
+  alg: string;
   jwk: jose.JWK;
 } {
   if (header.typ !== DPOP_JWT_TYP) {
     throw new ValidationError('Invalid DPoP proof header', { typ: 'Invalid' });
   }
-  if (
-    typeof header.alg !== 'string' ||
-    !DPOP_JWS_ALGORITHMS.includes(header.alg as jose.JWSAlgorithm)
-  ) {
+  if (typeof header.alg !== 'string' || !DPOP_JWS_ALGORITHMS.includes(header.alg)) {
     throw new ValidationError('Invalid DPoP proof algorithm', { alg: 'Invalid' });
   }
   if (!isRecord(header.jwk)) {
@@ -63,7 +60,7 @@ export interface ValidateDpopProofParams {
 export async function validateDpopProof(
   proofJwt: string,
   params: ValidateDpopProofParams,
-): Promise<{ jkt: string; publicKey: jose.KeyLike }> {
+): Promise<{ jkt: string; publicKey: jose.CryptoKey | Uint8Array }> {
   let protectedHeader: jose.ProtectedHeaderParameters;
   try {
     protectedHeader = jose.decodeProtectedHeader(proofJwt);
@@ -74,7 +71,7 @@ export async function validateDpopProof(
   assertDpopHeader(protectedHeader);
   const { alg, jwk } = protectedHeader;
 
-  let publicKey: jose.KeyLike;
+  let publicKey: jose.CryptoKey | Uint8Array;
   try {
     publicKey = await jose.importJWK(jwk, alg);
   } catch {

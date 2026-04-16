@@ -54,7 +54,12 @@ describe('client routes integration', () => {
       payload: createPayload,
     });
     expect(createRes.statusCode).toBe(201);
-    const created = createRes.json() as { id: string; clientId: string; clientSecret: string };
+    const created = createRes.json() as {
+      id: string;
+      clientId: string;
+      clientSecret: string;
+      clientName: string;
+    };
     expect(created.clientSecret).toBeDefined();
     expect(created.clientName).toBe('Integration Client');
 

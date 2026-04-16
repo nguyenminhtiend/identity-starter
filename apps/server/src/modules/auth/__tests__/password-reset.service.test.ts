@@ -53,12 +53,12 @@ describe('requestPasswordReset', () => {
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
         limit: vi.fn().mockResolvedValue([userRow]),
-      })
+      } as never)
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([{ count: 3 }]),
         }),
-      });
+      } as never);
 
     const eventBus = new InMemoryEventBus();
     const publishSpy = vi.spyOn(eventBus, 'publish');
@@ -87,12 +87,12 @@ describe('requestPasswordReset', () => {
         from: vi.fn().mockReturnThis(),
         where: vi.fn().mockReturnThis(),
         limit: vi.fn().mockResolvedValue([userRow]),
-      })
+      } as never)
       .mockReturnValueOnce({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([{ count: 0 }]),
         }),
-      });
+      } as never);
 
     const eventBus = new InMemoryEventBus();
     const events: { eventName: string; payload: unknown }[] = [];
